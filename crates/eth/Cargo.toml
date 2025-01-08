@@ -1,0 +1,19 @@
+[package]
+name = "eth"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[dependencies]
+reth-provider = { git = "https://github.com/paradigmxyz/reth", tag = "v1.1.5" }
+reth-rpc = { git = "https://github.com/paradigmxyz/reth", tag = "v1.1.5" }
+reth-rpc-eth-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.1.5" }
+
+alloy.workspace = true
+tracing.workspace = true
+router.workspace = true
+axum = "0.8.1"
