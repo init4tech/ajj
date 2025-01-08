@@ -1,0 +1,68 @@
+[package]
+name = "ajj"
+
+description = "Simple, modern, ergonomic JSON-RPC 2.0 router built with tower and axum"
+keywords = ["json-rpc", "jsonrpc", "json"]
+categories = ["web-programming::http-server", "web-programming::websocket"]
+
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.81"
+authors = ["init4", "James Prestwich"]
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/init4tech/rpc"
+repository = "https://github.com/init4tech/rpc"
+
+[dependencies]
+bytes = "1.9.0"
+pin-project = "1.1.8"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = { version = "1.0.135", features = ["raw_value"] }
+thiserror = "2.0.9"
+tokio = { version = "1.43.0", features = ["sync", "rt", "macros"] }
+tower = { version = "0.5.2", features = ["util"] }
+tracing = "0.1.41"
+
+# axum
+axum = { version = "0.8.1", optional = true }
+
+# pubsub
+tokio-stream = { version = "0.1.17", optional = true }
+
+# ipc
+interprocess = { version = "2.2.2", features = ["async", "tokio"], optional = true }
+tokio-util = { version = "0.7.13", optional = true, features = ["io"] }
+
+# ws
+tokio-tungstenite = { version = "0.26.1", features = ["rustls-tls-webpki-roots"], optional = true }
+futures-util = { version = "0.3.31", optional = true }
+
+[features]
+default = ["axum", "ws", "ipc"]
+axum = ["dep:axum"]
+pubsub = ["dep:tokio-stream"]
+ipc = ["pubsub", "dep:tokio-util", "dep:interprocess"]
+ws = ["pubsub", "dep:tokio-tungstenite", "dep:futures-util"]
+tokio-util = ["dep:tokio-util"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+debug = "line-tables-only"
+strip = true
+panic = "unwind"
+codegen-units = 16
+
+[profile.profiling]
+inherits = "release"
+debug = 2
+strip = false
+
+[profile.bench]
+inherits = "profiling"
+
+[profile.ci-rust]
+inherits = "dev"
+strip = true
+debug = false
+incremental = false
