@@ -1,0 +1,11 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# simplest example of using the rust-base action
+jobs:
+  rust-base:
+    uses: init4tech/actions/.github/workflows/rust-base.yml@main
