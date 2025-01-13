@@ -1,19 +1,9 @@
-use crate::shared::{ConnectionId, Instruction, InstructionBody, Manager, RouteTask, WriteTask};
+use crate::shared::{InstructionBody, Manager, WriteTask};
 use alloy::transports::ipc::ReadJsonStream;
 use interprocess::local_socket::{
     tokio::SendHalf, traits::tokio::Listener, traits::tokio::Stream as _,
 };
-use std::collections::HashMap;
-use tokio::{
-    io::AsyncWriteExt,
-    select,
-    sync::{mpsc, oneshot},
-    task::JoinHandle,
-};
-
-pub struct ConnectionManager {
-    _shutdown: oneshot::Sender<()>,
-}
+use tokio::{io::AsyncWriteExt, select, task::JoinHandle};
 
 /// Task accepts new connections, creates a new `IpcRouteTask` for each
 /// connection,
@@ -82,8 +72,8 @@ impl IpcWriteTask {
                             InstructionBody::Json(json) => {
                                 if let Some(conn) = self.connections.get_mut(&inst.conn_id) {
                                     if let Err(e) =  conn.write_all(json.get().as_bytes()).await {
-                                        tracing::error!(%e, "Failed to write to connection");
-                                        break;
+                                        tracing::error!(conn_id = inst.conn_id, %e, "Failed to write to connection");
+                                        continue;
                                     }
                                 }
                             }

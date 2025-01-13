@@ -1,4 +1,4 @@
-use crate::shared::Manager;
+use crate::{shared::Manager, InstructionBody, WriteTask};
 use alloy::rpc::json_rpc::PartiallySerializedRequest;
 use futures_util::{
     stream::{SplitSink, SplitStream},
@@ -6,13 +6,13 @@ use futures_util::{
 };
 use serde_json::value::RawValue;
 use std::{
-    convert::Infallible,
     pin::Pin,
     task::ready,
     task::{Context, Poll},
 };
 use tokio::{
     net::{TcpListener, TcpStream},
+    select,
     task::JoinHandle,
 };
 use tokio_tungstenite::{accept_async, tungstenite::protocol::Message, WebSocketStream};
@@ -21,6 +21,7 @@ use tracing::{debug, debug_span, error, trace, Instrument};
 type SendHalf = SplitSink<WebSocketStream<TcpStream>, Message>;
 type RecvHalf = SplitStream<WebSocketStream<TcpStream>>;
 
+/// Listner for WebSocket connections.
 pub struct WsListener {
     listener: TcpListener,
 
@@ -67,7 +68,7 @@ impl WsListener {
 }
 
 #[pin_project::pin_project]
-struct WsJsonSink {
+pub struct WsJsonSink {
     #[pin]
     inner: SendHalf,
 }
@@ -161,5 +162,49 @@ impl Stream for WsJsonStream {
                 Err(()) => self.complete = true,
             }
         }
+    }
+}
+
+/// Task for writing JSON to WS connections.
+pub type WsWriteTask = WriteTask<WsJsonSink>;
+
+impl WsWriteTask {
+    pub fn spawn(mut self) -> JoinHandle<()> {
+        let future = async move {
+            loop {
+                select! {
+                    biased;
+                    _ = &mut self.shutdown => {
+                        debug!("Shutdown signal received");
+                        break;
+                    }
+                    inst = self.inst.recv() => {
+                        let Some(inst) = inst else {
+                            error!("Json stream has closed");
+                            break;
+                        };
+
+                        let conn_id = inst.conn_id;
+
+                        match inst.body {
+                            InstructionBody::NewConn(conn) => {
+                                self.handle_new_conn(conn_id, conn);
+                            }
+                            InstructionBody::Json(json) => {
+                                if let Some(conn) = self.connections.get_mut(&conn_id) {
+                                    if let Err(err) = conn.send(json).await {
+                                        error!(conn_id, %err, "Failed to send json");
+                                    }
+                                }
+                            }
+                            InstructionBody::GoingAway => {
+                                self.handle_going_away(conn_id);
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        tokio::spawn(future)
     }
 }

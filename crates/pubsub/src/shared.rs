@@ -1,12 +1,22 @@
 use alloy::rpc::json_rpc::{PartiallySerializedRequest, Response};
 use serde_json::value::RawValue;
-use tokio::{select, sync::mpsc, task::JoinHandle};
+use tokio::{
+    select,
+    sync::{mpsc, oneshot},
+    task::JoinHandle,
+};
 use tokio_stream::{Stream, StreamExt};
 use tracing::{debug, debug_span, error, info_span, trace, Instrument};
 
-///
+/// Type alias for identifying connections.
 pub type ConnectionId = u64;
 
+/// Holds the shutdown signal for some server.
+pub struct ServerShutdown {
+    _shutdown: oneshot::Sender<()>,
+}
+
+/// The Manager tracks
 pub struct Manager<Out> {
     pub(crate) next_id: ConnectionId,
     pub(crate) write_task: mpsc::Sender<Instruction<Out>>,
