@@ -10,6 +10,7 @@ repository.workspace = true
 
 [dependencies]
 alloy = { workspace = true, features = ["transport-ipc"] }
+dashmap = "6.1.0"
 
 interprocess = { version = "2.2.2", features = ["async", "tokio"] }
 router.workspace = true
