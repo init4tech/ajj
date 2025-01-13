@@ -5,7 +5,7 @@ resolver = "2"
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.81"
 authors = ["init4"]
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/init4tech/jsonrpc"
@@ -36,8 +36,11 @@ incremental = false
 [workspace.dependencies]
 router = { path = "./crates/router" }
 eth = { path = "./crates/eth" }
+pubsub = { path = "./crates/pubsub" }
 
-alloy = { version = "0.9.2", features = ["json-rpc", "rpc-types"] }
+# alloy = { version = "0.9.2", features = ["json-rpc", "rpc-types"] }
+alloy = { git = "https://github.com/alloy-rs/alloy.git", branch = "prestwich/generic-read-json", features = ["json-rpc", "rpc-types"] }
+
 pin-project = "1.1.8"
 serde_json = "1.0.135"
 thiserror = "2.0.9"

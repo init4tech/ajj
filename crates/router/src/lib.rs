@@ -21,6 +21,9 @@ pub(crate) mod macros;
 #[cfg(feature = "axum")]
 mod axum;
 
+mod ctx;
+pub use ctx::HandlerCtx;
+
 mod error;
 pub use error::RegistrationError;
 
