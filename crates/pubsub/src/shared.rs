@@ -1,7 +1,6 @@
 use crate::{In, JsonSink, Listener, Out};
 use alloy::rpc::json_rpc::Response;
 use serde_json::value::RawValue;
-use std::collections::HashMap;
 use tokio::{
     select,
     sync::{mpsc, watch},
@@ -15,7 +14,13 @@ pub type ConnectionId = u64;
 
 /// Holds the shutdown signal for some server.
 pub struct ServerShutdown {
-    _shutdown: watch::Sender<()>,
+    pub(crate) _shutdown: watch::Sender<()>,
+}
+
+impl From<watch::Sender<()>> for ServerShutdown {
+    fn from(sender: watch::Sender<()>) -> Self {
+        Self { _shutdown: sender }
+    }
 }
 
 /// The `ListenerTask` listens for new connections, and spawns `RouteTask`s for
@@ -68,8 +73,6 @@ pub(crate) struct ConnectionManager {
     pub(crate) next_id: ConnectionId,
 
     pub(crate) router: router::Router<()>,
-
-    pub(crate) writers: HashMap<ConnectionId, mpsc::Sender<Instruction>>,
 }
 
 impl ConnectionManager {
@@ -96,7 +99,7 @@ impl ConnectionManager {
         let (tx, rx) = mpsc::channel(100);
 
         let rt = RouteTask {
-            router: self.router.clone(),
+            router: self.router(),
             conn_id,
             write_task: tx,
             requests,
@@ -127,9 +130,8 @@ impl ConnectionManager {
     }
 }
 
-/// `InstructionBody` is the body of an `Instruction`. It contains the action
-/// that the [`WriteTask`] should take.
-pub enum InstructionBody {
+/// Contains the action that the [`WriteTask`] should take.
+pub enum Instruction {
     /// Json should be written.
     Json(Box<RawValue>),
     /// Connection is going away, and can be removed from the [`WriteTask`]'s
@@ -137,17 +139,10 @@ pub enum InstructionBody {
     GoingAway,
 }
 
-impl From<Box<RawValue>> for InstructionBody {
+impl From<Box<RawValue>> for Instruction {
     fn from(json: Box<RawValue>) -> Self {
-        InstructionBody::Json(json)
+        Instruction::Json(json)
     }
-}
-
-/// Instructions to the [`WriteTask`]. These are sent by the [`RouteTask`], the
-/// [`ListenerTask`], and by individual RPC handlers.
-pub struct Instruction {
-    pub(crate) conn_id: ConnectionId,
-    pub(crate) body: InstructionBody,
 }
 
 /// Task that reads requests from a stream, and routes them to the
@@ -177,9 +172,9 @@ where
     pub async fn task_future(self) {
         let RouteTask {
             router,
-            conn_id,
             mut requests,
             write_task,
+            ..
         } = self;
 
         loop {
@@ -193,10 +188,8 @@ where
                     let Some(item) = item else {
                         trace!("IPC read stream has closed");
                         let _ = write_task.send(
-                            Instruction {
-                                conn_id,
-                                body: InstructionBody::GoingAway,
-                            }
+                            Instruction::GoingAway
+
                         ).await;
                         break;
                     };
@@ -227,10 +220,7 @@ where
                             // we don't care if the receiver has gone away,
                             // as the task is done regardless.
                             let _ = write_task.send(
-                                Instruction {
-                                    conn_id,
-                                    body: rv.into(),
-                                }
+                                rv.into()
                             ).await;
                         }
                         .instrument(span)
@@ -292,14 +282,14 @@ impl<T: Listener> WriteTask<T> {
                         break;
                     };
 
-                    match inst.body {
-                        InstructionBody::Json(json) => {
+                    match inst {
+                        Instruction::Json(json) => {
                             if let Err(err) = connection.send_json(json).await {
                                 debug!(%err, "Failed to send json");
                                 break;
                             }
                         }
-                        InstructionBody::GoingAway => {
+                        Instruction::GoingAway => {
                             debug!("Send half has closed");
                             break;
                         }

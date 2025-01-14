@@ -16,8 +16,7 @@
 mod ipc;
 
 mod shared;
-pub use shared::{Instruction, InstructionBody, ServerShutdown};
-pub(crate) use shared::{ListenerTask, RouteTask, WriteTask};
+pub use shared::{Instruction, ServerShutdown};
 
 mod r#trait;
 pub use r#trait::{Connect, In, JsonReqStream, JsonSink, Listener, Out};
