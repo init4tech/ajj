@@ -1,90 +1,50 @@
-use crate::shared::{InstructionBody, Manager, WriteTask};
-use alloy::transports::ipc::ReadJsonStream;
-use interprocess::local_socket::{
-    tokio::SendHalf, traits::tokio::Listener, traits::tokio::Stream as _,
+use crate::{
+    shared::{InstructionBody, ListenerTask, Manager, WriteTask},
+    RouteTask,
 };
+use alloy::{rpc::json_rpc::PartiallySerializedRequest, transports::ipc::ReadJsonStream};
+use interprocess::local_socket::{
+    tokio::{Listener, RecvHalf, SendHalf},
+    traits::tokio::{Listener as _, Stream as _},
+};
+use serde_json::value::RawValue;
+use std::{future::Future, io};
 use tokio::{io::AsyncWriteExt, select, task::JoinHandle};
 
-/// Task accepts new connections, creates a new `IpcRouteTask` for each
-/// connection,
-pub struct IpcListener {
-    listener: interprocess::local_socket::tokio::Listener,
+pub type IpcListenerTask = ListenerTask<interprocess::local_socket::tokio::Listener>;
 
-    manager: Manager<SendHalf>,
-}
-
-impl IpcListener {
-    pub fn spawn(self) -> JoinHandle<()> {
-        let future = async move {
-            let IpcListener {
-                listener,
-                mut manager,
-            } = self;
-
-            loop {
-                let conn = match listener.accept().await {
-                    Ok(conn) => conn,
-                    Err(err) => {
-                        tracing::error!(%err, "Failed to accept connection");
-                        break;
-                    }
-                };
-
-                let (recv, send) = conn.split();
-
-                if let Err(err) = manager
-                    .handle_new_connection(ReadJsonStream::from(recv), send)
-                    .await
-                {
-                    tracing::error!(%err, "Failed to enroll connection, WriteTask has gone away.");
-                    break;
-                }
-            }
-        };
-        tokio::spawn(future)
-    }
-}
+pub type IpcRouteTask = RouteTask<interprocess::local_socket::tokio::Listener>;
 
 /// The IpcWriteTask is responsible for writing responses to IPC sockets.
 pub type IpcWriteTask = WriteTask<SendHalf>;
 
-impl IpcWriteTask {
-    /// Spawn an [`IpcWriteTask`] to write responses to IPC sockets.
-    pub fn spawn(mut self) -> JoinHandle<()> {
-        let future = async move {
-            loop {
-                select! {
-                    biased;
-                    _ = &mut self.shutdown => {
-                        tracing::debug!("Shutdown signal received");
-                        break;
-                    }
-                    inst = self.inst.recv() => {
-                        let Some(inst) = inst else {
-                            tracing::error!("Json stream has closed");
-                            break;
-                        };
+impl crate::Listener for Listener {
+    type RespSink = SendHalf;
 
-                        match inst.body {
-                            InstructionBody::NewConn(conn) => {
-                                self.handle_new_conn(inst.conn_id, conn);
-                            }
-                            InstructionBody::Json(json) => {
-                                if let Some(conn) = self.connections.get_mut(&inst.conn_id) {
-                                    if let Err(e) =  conn.write_all(json.get().as_bytes()).await {
-                                        tracing::error!(conn_id = inst.conn_id, %e, "Failed to write to connection");
-                                        continue;
-                                    }
-                                }
-                            }
-                            InstructionBody::GoingAway => {
-                                self.handle_going_away(inst.conn_id);
-                            }
-                        }
-                    }
-                }
-            }
-        };
-        tokio::spawn(future)
+    type ReqStream = ReadJsonStream<RecvHalf, PartiallySerializedRequest>;
+
+    type Error = io::Error;
+
+    fn accept(
+        &self,
+    ) -> impl Future<Output = Result<(Self::RespSink, Self::ReqStream), Self::Error>> + Send {
+        async {
+            let conn = interprocess::local_socket::traits::tokio::Listener::accept(self).await?;
+
+            let (recv, send) = conn.split();
+
+            Ok((send, recv.into()))
+        }
+    }
+}
+
+impl crate::JsonSink for SendHalf {
+    type Error = std::io::Error;
+
+    fn send_json(
+        &mut self,
+        json: Box<RawValue>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        async move { self.write_all(json.get().as_bytes()).await }
     }
 }

@@ -1,3 +1,4 @@
+use crate::{In, Listener, Out};
 use alloy::rpc::json_rpc::{PartiallySerializedRequest, Response};
 use serde_json::value::RawValue;
 use tokio::{
@@ -16,14 +17,50 @@ pub struct ServerShutdown {
     _shutdown: oneshot::Sender<()>,
 }
 
+pub struct ListenerTask<T: Listener> {
+    listener: T,
+    manager: Manager<T>,
+}
+
+impl<T> ListenerTask<T>
+where
+    T: Listener,
+{
+    pub fn spawn(self) -> JoinHandle<()> {
+        let future = async move {
+            let ListenerTask {
+                listener,
+                mut manager,
+            } = self;
+
+            loop {
+                let (resp_sink, req_stream) = match listener.accept().await {
+                    Ok((resp_sink, req_stream)) => (resp_sink, req_stream),
+                    Err(err) => {
+                        error!(%err, "Failed to accept connection");
+                        // TODO: should these errors be considered persistent?
+                        continue;
+                    }
+                };
+
+                if let Err(err) = manager.handle_new_connection(req_stream, resp_sink).await {
+                    error!(%err, "Failed to enroll connection, WriteTask has gone away.");
+                    break;
+                }
+            }
+        };
+        tokio::spawn(future)
+    }
+}
+
 /// The Manager tracks
-pub struct Manager<Out> {
+pub struct Manager<T: Listener> {
     pub(crate) next_id: ConnectionId,
-    pub(crate) write_task: mpsc::Sender<Instruction<Out>>,
+    pub(crate) write_task: mpsc::Sender<Instruction<Out<T>>>,
     pub(crate) router: router::Router<()>,
 }
 
-impl<Out> Manager<Out> {
+impl<T: Listener> Manager<T> {
     /// Increment the connection ID counter and return an unused ID.
     pub fn next_id(&mut self) -> ConnectionId {
         let id = self.next_id;
@@ -32,7 +69,7 @@ impl<Out> Manager<Out> {
     }
 
     /// Get a clone of the write task sender.
-    pub fn write_task(&self) -> mpsc::Sender<Instruction<Out>> {
+    pub fn write_task(&self) -> mpsc::Sender<Instruction<Out<T>>> {
         self.write_task.clone()
     }
 
@@ -44,8 +81,8 @@ impl<Out> Manager<Out> {
     /// Enroll a new connection.
     pub async fn enroll(
         &mut self,
-        conn: Out,
-    ) -> Result<ConnectionId, mpsc::error::SendError<Instruction<Out>>> {
+        conn: Out<T>,
+    ) -> Result<ConnectionId, mpsc::error::SendError<Instruction<Out<T>>>> {
         let id = self.next_id();
         self.write_task
             .send(Instruction {
@@ -59,18 +96,15 @@ impl<Out> Manager<Out> {
     /// Send an instruction to the write task
     pub async fn send_instruction(
         &self,
-        instruction: Instruction<Out>,
-    ) -> Result<(), mpsc::error::SendError<Instruction<Out>>> {
+        instruction: Instruction<Out<T>>,
+    ) -> Result<(), mpsc::error::SendError<Instruction<Out<T>>>> {
         self.write_task.send(instruction).await
     }
 
     /// Spawn a new route task.
-    pub fn spawn_route_task<In>(&mut self, conn_id: ConnectionId, requests: In) -> JoinHandle<()>
-    where
-        In: Stream<Item = PartiallySerializedRequest> + Send + Unpin + 'static,
-        Out: Send + 'static,
-    {
-        RouteTask {
+    pub fn spawn_route_task(&mut self, conn_id: ConnectionId, requests: In<T>) -> JoinHandle<()>
+where {
+        RouteTask::<T> {
             router: self.router.clone(),
             conn_id,
             write_task: self.write_task.clone(),
@@ -81,15 +115,11 @@ impl<Out> Manager<Out> {
 
     /// Handle a new connection, enrolling it in the write task, and spawning
     /// its route task.
-    pub async fn handle_new_connection<In>(
+    pub async fn handle_new_connection(
         &mut self,
-        requests: In,
-        out: Out,
-    ) -> Result<JoinHandle<()>, mpsc::error::SendError<Instruction<Out>>>
-    where
-        In: Stream<Item = PartiallySerializedRequest> + Send + Unpin + 'static,
-        Out: Send + 'static,
-    {
+        requests: In<T>,
+        out: Out<T>,
+    ) -> Result<JoinHandle<()>, mpsc::error::SendError<Instruction<Out<T>>>> {
         let id = self.enroll(out).await?;
         Ok(self.spawn_route_task(id, requests))
     }
@@ -118,18 +148,17 @@ pub struct Instruction<Out> {
 
 /// Task that reads requests from a stream, and routes them to the
 /// [`router::Router`], and ensures responses are sent to a write task.
-pub struct RouteTask<In, Out> {
+pub struct RouteTask<T: crate::Listener> {
     pub(crate) router: router::Router<()>,
     pub(crate) conn_id: ConnectionId,
-    pub(crate) write_task: mpsc::Sender<Instruction<Out>>,
+    pub(crate) write_task: mpsc::Sender<Instruction<Out<T>>>,
 
-    pub(crate) requests: In,
+    pub(crate) requests: In<T>,
 }
 
-impl<In, Out> RouteTask<In, Out>
+impl<T> RouteTask<T>
 where
-    In: tokio_stream::Stream<Item = PartiallySerializedRequest> + Send + Unpin + 'static,
-    Out: Send + 'static,
+    T: crate::Listener,
 {
     pub fn spawn(self) -> tokio::task::JoinHandle<()> {
         let future = async move {
@@ -214,12 +243,68 @@ pub struct WriteTask<Out> {
     pub(crate) connections: std::collections::HashMap<ConnectionId, Out>,
 }
 
-impl<Out> WriteTask<Out> {
+impl<Out> WriteTask<Out>
+where
+    Out: crate::JsonSink,
+{
     pub fn handle_new_conn(&mut self, conn_id: ConnectionId, conn: Out) {
         self.connections.insert(conn_id, conn);
     }
 
     pub fn handle_going_away(&mut self, conn_id: ConnectionId) {
         self.connections.remove(&conn_id);
+    }
+
+    /// Handle Json
+    pub async fn handle_json(
+        &mut self,
+        conn_id: ConnectionId,
+        json: Box<RawValue>,
+    ) -> Result<(), <Out as crate::JsonSink>::Error> {
+        if let Some(conn) = self.connections.get_mut(&conn_id) {
+            conn.send_json(json).await
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Task future, which will be run by [`Self::spawn`].
+    pub async fn task_future(mut self) {
+        loop {
+            select! {
+                biased;
+                _ = &mut self.shutdown => {
+                    tracing::debug!("Shutdown signal received");
+                    break;
+                }
+                inst = self.inst.recv() => {
+                    let Some(inst) = inst else {
+                        tracing::error!("Json stream has closed");
+                        break;
+                    };
+
+                    match inst.body {
+                        InstructionBody::NewConn(conn) => {
+                            self.handle_new_conn(inst.conn_id, conn);
+                        }
+                        InstructionBody::Json(json) => {
+                                if let Err(e) = self.handle_json(inst.conn_id, json).await {
+                                    tracing::error!(conn_id = inst.conn_id, %e, "Failed to write to connection");
+                                    continue;
+                                }
+
+                        }
+                        InstructionBody::GoingAway => {
+                            self.handle_going_away(inst.conn_id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Spawn a write task to write responses to outbound channels.
+    pub fn spawn(self) -> JoinHandle<()> {
+        tokio::spawn(self.task_future())
     }
 }

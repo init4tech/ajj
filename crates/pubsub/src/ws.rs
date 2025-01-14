@@ -6,9 +6,9 @@ use futures_util::{
 };
 use serde_json::value::RawValue;
 use std::{
+    future::Future,
     pin::Pin,
-    task::ready,
-    task::{Context, Poll},
+    task::{ready, Context, Poll},
 };
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -18,88 +18,26 @@ use tokio::{
 use tokio_tungstenite::{accept_async, tungstenite::protocol::Message, WebSocketStream};
 use tracing::{debug, debug_span, error, trace, Instrument};
 
-type SendHalf = SplitSink<WebSocketStream<TcpStream>, Message>;
-type RecvHalf = SplitStream<WebSocketStream<TcpStream>>;
+/// Sending half of a [`WebSocketStream`].
+pub type SendHalf = SplitSink<WebSocketStream<TcpStream>, Message>;
 
-/// Listner for WebSocket connections.
-pub struct WsListener {
-    listener: TcpListener,
+/// Receiving half of a [`WebSocketStream`].
+pub type RecvHalf = SplitStream<WebSocketStream<TcpStream>>;
 
-    manager: Manager<WsJsonSink>,
-}
+/// Task for writing JSON to WS connections.
+pub type WsWriteTask = WriteTask<SendHalf>;
 
-impl WsListener {
-    pub fn spawn(self) -> JoinHandle<()> {
-        let future = async move {
-            let WsListener {
-                listener,
-                mut manager,
-            } = self;
-            loop {
-                let Ok((stream, socket_addr)) = listener.accept().await else {
-                    error!("Failed to accept connection");
-                    // TODO: should these errors be considered persistent?
-                    continue;
-                };
+/// Task for reading JSON from inbound WS connections and creating route
+/// futures.
+pub type WsRouteTask = crate::RouteTask<WsJsonStream>;
 
-                let span = debug_span!("ws connection", remote_addr = %socket_addr);
+/// Task for listening for new websocket streams.
+pub type WsListenerTask = crate::ListenerTask<TcpStream>;
 
-                let ws_stream = match accept_async(stream).instrument(span).await {
-                    Ok(ws_stream) => ws_stream,
-                    Err(err) => {
-                        // TODO: should these errors be considered persistent?
-                        debug!(%err, "Failed to accept WebSocket connection");
-                        continue;
-                    }
-                };
-
-                let (send, recv) = ws_stream.split();
-
-                let recv = WsJsonStream::from(recv);
-
-                if let Err(err) = manager.handle_new_connection(recv, send.into()).await {
-                    error!(%err, "Failed to enroll connection, WriteTask has gone away.");
-                    break;
-                }
-            }
-        };
-        tokio::spawn(future)
-    }
-}
-
-#[pin_project::pin_project]
-pub struct WsJsonSink {
-    #[pin]
-    inner: SendHalf,
-}
-
-impl From<SendHalf> for WsJsonSink {
-    fn from(inner: SendHalf) -> Self {
-        Self { inner }
-    }
-}
-
-impl Sink<Box<RawValue>> for WsJsonSink {
-    type Error = <SendHalf as Sink<Message>>::Error;
-
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.project().inner.poll_ready(cx)
-    }
-
-    fn start_send(self: Pin<&mut Self>, item: Box<RawValue>) -> Result<(), Self::Error> {
-        self.project().inner.start_send(Message::text(item.get()))
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.project().inner.poll_flush(cx)
-    }
-
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.project().inner.poll_close(cx)
-    }
-}
-
-struct WsJsonStream {
+/// Simple stream adapter for deserializing JSON from a websocket.
+///
+/// Malformatted JSON is dropped.
+pub struct WsJsonStream {
     inner: RecvHalf,
     complete: bool,
 }
@@ -165,46 +103,37 @@ impl Stream for WsJsonStream {
     }
 }
 
-/// Task for writing JSON to WS connections.
-pub type WsWriteTask = WriteTask<WsJsonSink>;
+impl crate::JsonSink for SendHalf {
+    type Error = tokio_tungstenite::tungstenite::Error;
 
-impl WsWriteTask {
-    pub fn spawn(mut self) -> JoinHandle<()> {
-        let future = async move {
-            loop {
-                select! {
-                    biased;
-                    _ = &mut self.shutdown => {
-                        debug!("Shutdown signal received");
-                        break;
-                    }
-                    inst = self.inst.recv() => {
-                        let Some(inst) = inst else {
-                            error!("Json stream has closed");
-                            break;
-                        };
+    fn send_json(
+        &mut self,
+        json: Box<RawValue>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        async move { self.send(Message::text(json.get())).await }
+    }
+}
 
-                        let conn_id = inst.conn_id;
+impl crate::Listener for TcpListener {
+    type RespSink = SendHalf;
 
-                        match inst.body {
-                            InstructionBody::NewConn(conn) => {
-                                self.handle_new_conn(conn_id, conn);
-                            }
-                            InstructionBody::Json(json) => {
-                                if let Some(conn) = self.connections.get_mut(&conn_id) {
-                                    if let Err(err) = conn.send(json).await {
-                                        error!(conn_id, %err, "Failed to send json");
-                                    }
-                                }
-                            }
-                            InstructionBody::GoingAway => {
-                                self.handle_going_away(conn_id);
-                            }
-                        }
-                    }
-                }
-            }
-        };
-        tokio::spawn(future)
+    type ReqStream = WsJsonStream;
+
+    type Error = tokio_tungstenite::tungstenite::Error;
+
+    fn accept(
+        &self,
+    ) -> impl Future<Output = Result<(Self::RespSink, Self::ReqStream), Self::Error>> + Send {
+        async move {
+            let (stream, socket_addr) = self.accept().await?;
+
+            let span = debug_span!("ws connection", remote_addr = %socket_addr);
+
+            let ws_stream = accept_async(stream).instrument(span).await?;
+
+            let (send, recv) = ws_stream.split();
+
+            Ok((send, recv.into()))
+        }
     }
 }
