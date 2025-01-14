@@ -10,14 +10,13 @@ repository.workspace = true
 
 [dependencies]
 alloy = { workspace = true, features = ["transport-ipc"] }
-dashmap = "6.1.0"
 futures-util = "0.3.31"
 
 interprocess = { version = "2.2.2", features = ["async", "tokio"] }
 pin-project = "1.1.8"
 router.workspace = true
 serde_json = { workspace = true, features = ["raw_value"] }
-tokio = { workspace = true, features = ["io-util", "macros", "net", "sync"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync"] }
 tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.26.1", features = ["rustls-tls-webpki-roots"] }
 tower.workspace = true

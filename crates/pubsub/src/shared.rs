@@ -1,9 +1,10 @@
-use crate::{In, Listener, Out};
+use crate::{In, JsonSink, Listener, Out};
 use alloy::rpc::json_rpc::Response;
 use serde_json::value::RawValue;
+use std::collections::HashMap;
 use tokio::{
     select,
-    sync::{mpsc, oneshot},
+    sync::{mpsc, watch},
     task::JoinHandle,
 };
 use tokio_stream::StreamExt;
@@ -14,12 +15,14 @@ pub type ConnectionId = u64;
 
 /// Holds the shutdown signal for some server.
 pub struct ServerShutdown {
-    _shutdown: oneshot::Sender<()>,
+    _shutdown: watch::Sender<()>,
 }
 
-pub struct ListenerTask<T: Listener> {
-    listener: T,
-    manager: Manager<T>,
+/// The `ListenerTask` listens for new connections, and spawns `RouteTask`s for
+/// each.
+pub(crate) struct ListenerTask<T: Listener> {
+    pub(crate) listener: T,
+    pub(crate) manager: ConnectionManager,
 }
 
 impl<T> ListenerTask<T>
@@ -27,6 +30,9 @@ where
     T: Listener,
 {
     /// Task future, which will be run by [`Self::spawn`].
+    ///
+    /// This future is a simple loop that accepts new connections, and uses
+    /// the [`ConnectionManager`] to handle them.
     pub async fn task_future(self) {
         let ListenerTask {
             listener,
@@ -43,10 +49,7 @@ where
                 }
             };
 
-            if let Err(err) = manager.handle_new_connection(req_stream, resp_sink).await {
-                error!(%err, "Failed to enroll connection, WriteTask has gone away.");
-                break;
-            }
+            manager.handle_new_connection::<T>(req_stream, resp_sink);
         }
     }
 
@@ -57,14 +60,19 @@ where
     }
 }
 
-/// The Manager tracks
-pub struct Manager<T: Listener> {
+/// The `ConnectionManager` provides connections with IDs, and handles spawning
+/// the [`RouteTask`] for each connection.
+pub(crate) struct ConnectionManager {
+    pub(crate) shutdown: watch::Receiver<()>,
+
     pub(crate) next_id: ConnectionId,
-    pub(crate) write_task: mpsc::Sender<Instruction<Out<T>>>,
+
     pub(crate) router: router::Router<()>,
+
+    pub(crate) writers: HashMap<ConnectionId, mpsc::Sender<Instruction>>,
 }
 
-impl<T: Listener> Manager<T> {
+impl ConnectionManager {
     /// Increment the connection ID counter and return an unused ID.
     pub fn next_id(&mut self) -> ConnectionId {
         let id = self.next_id;
@@ -72,91 +80,86 @@ impl<T: Listener> Manager<T> {
         id
     }
 
-    /// Get a clone of the write task sender.
-    pub fn write_task(&self) -> mpsc::Sender<Instruction<Out<T>>> {
-        self.write_task.clone()
-    }
-
     /// Get a clone of the router.
     pub fn router(&self) -> router::Router<()> {
         self.router.clone()
     }
 
-    /// Enroll a new connection.
-    pub async fn enroll(
-        &mut self,
-        conn: Out<T>,
-    ) -> Result<ConnectionId, mpsc::error::SendError<Instruction<Out<T>>>> {
-        let id = self.next_id();
-        self.write_task
-            .send(Instruction {
-                conn_id: id,
-                body: InstructionBody::NewConn(conn),
-            })
-            .await?;
-        Ok(id)
-    }
-
-    /// Send an instruction to the write task
-    pub async fn send_instruction(
+    /// Create new [`RouteTask`] and [`WriteTask`] for a connection.
+    fn make_tasks<T: Listener>(
         &self,
-        instruction: Instruction<Out<T>>,
-    ) -> Result<(), mpsc::error::SendError<Instruction<Out<T>>>> {
-        self.write_task.send(instruction).await
-    }
+        conn_id: ConnectionId,
+        requests: In<T>,
+        connection: Out<T>,
+    ) -> (RouteTask<T>, WriteTask<T>) {
+        // TODO: no magic constant. Configurable.
+        let (tx, rx) = mpsc::channel(100);
 
-    /// Spawn a new [`RouteTask`].
-    pub fn spawn_route_task(&mut self, conn_id: ConnectionId, requests: In<T>) -> JoinHandle<()>
-where {
-        RouteTask::<T> {
+        let rt = RouteTask {
             router: self.router.clone(),
             conn_id,
-            write_task: self.write_task.clone(),
+            write_task: tx,
             requests,
-        }
-        .spawn()
+        };
+
+        let wt = WriteTask {
+            shutdown: self.shutdown.clone(),
+            conn_id,
+            inst: rx,
+            connection,
+        };
+
+        (rt, wt)
+    }
+
+    /// Spawn a new [`RouteTask`] and [`WriteTask`] for a connection.
+    fn spawn_tasks<T: Listener>(&mut self, requests: In<T>, connection: Out<T>) {
+        let conn_id = self.next_id();
+        let (rt, wt) = self.make_tasks::<T>(conn_id, requests, connection);
+        rt.spawn();
+        wt.spawn();
     }
 
     /// Handle a new connection, enrolling it in the write task, and spawning
     /// its route task.
-    pub async fn handle_new_connection(
-        &mut self,
-        requests: In<T>,
-        out: Out<T>,
-    ) -> Result<JoinHandle<()>, mpsc::error::SendError<Instruction<Out<T>>>> {
-        let id = self.enroll(out).await?;
-        Ok(self.spawn_route_task(id, requests))
+    pub fn handle_new_connection<T: Listener>(&mut self, requests: In<T>, connection: Out<T>) {
+        self.spawn_tasks::<T>(requests, connection);
     }
 }
 
-pub enum InstructionBody<Out> {
-    /// New connection
-    NewConn(Out),
+/// `InstructionBody` is the body of an `Instruction`. It contains the action
+/// that the [`WriteTask`] should take.
+pub enum InstructionBody {
     /// Json should be written.
     Json(Box<RawValue>),
-    /// Connection is going away, and can be removed from the table.
+    /// Connection is going away, and can be removed from the [`WriteTask`]'s
+    /// management.
     GoingAway,
 }
 
-impl<Out> From<Box<RawValue>> for InstructionBody<Out> {
+impl From<Box<RawValue>> for InstructionBody {
     fn from(json: Box<RawValue>) -> Self {
         InstructionBody::Json(json)
     }
 }
 
-/// Instructions to the `WriteTask`.
-pub struct Instruction<Out> {
+/// Instructions to the [`WriteTask`]. These are sent by the [`RouteTask`], the
+/// [`ListenerTask`], and by individual RPC handlers.
+pub struct Instruction {
     pub(crate) conn_id: ConnectionId,
-    pub(crate) body: InstructionBody<Out>,
+    pub(crate) body: InstructionBody,
 }
 
 /// Task that reads requests from a stream, and routes them to the
-/// [`router::Router`], and ensures responses are sent to a write task.
+/// [`router::Router`], ensures responses are sent to the [`WriteTask`].
 pub struct RouteTask<T: crate::Listener> {
+    /// Router for handling requests.
     pub(crate) router: router::Router<()>,
+    /// Connection ID for the connection serviced by this task.
     pub(crate) conn_id: ConnectionId,
-    pub(crate) write_task: mpsc::Sender<Instruction<Out<T>>>,
-
+    /// Sender to the write task.
+    pub(crate) write_task: mpsc::Sender<Instruction>,
+    /// Stream of requests.
     pub(crate) requests: In<T>,
 }
 
@@ -165,6 +168,11 @@ where
     T: crate::Listener,
 {
     /// Task future, which will be run by [`Self::spawn`].
+    ///
+    /// This future is a simple loop, which reads requests from the stream,
+    /// and routes them to the router. For each request, a new task is spawned
+    /// to handle the request, and given a sender to the [`WriteTask`]. This
+    /// ensures that requests can be handled concurrently.
     #[instrument(name = "RouteTask", skip(self), fields(conn_id = self.conn_id))]
     pub async fn task_future(self) {
         let RouteTask {
@@ -238,72 +246,62 @@ where
         tokio::spawn(future)
     }
 }
-
-pub struct WriteTask<Out> {
+pub struct WriteTask<T: Listener> {
     /// Shutdown signal.
     ///
     /// Shutdowns bubble back up to [`RouteTask`] and [`ListenerTask`] when
     /// the write task is dropped, via the closed `inst` channel.
-    pub(crate) shutdown: tokio::sync::oneshot::Receiver<()>,
+    pub(crate) shutdown: watch::Receiver<()>,
 
-    pub(crate) inst: mpsc::Receiver<Instruction<Out>>,
+    /// ID of the connection.
+    pub(crate) conn_id: ConnectionId,
 
-    pub(crate) connections: std::collections::HashMap<ConnectionId, Out>,
+    /// Inbound [`Instruction`]s.
+    pub(crate) inst: mpsc::Receiver<Instruction>,
+
+    /// Outbound connections.
+    pub(crate) connection: Out<T>,
 }
 
-impl<Out> WriteTask<Out>
-where
-    Out: crate::JsonSink,
-{
-    pub fn handle_new_conn(&mut self, conn_id: ConnectionId, conn: Out) {
-        self.connections.insert(conn_id, conn);
-    }
-
-    pub fn handle_going_away(&mut self, conn_id: ConnectionId) {
-        self.connections.remove(&conn_id);
-    }
-
-    /// Handle Json
-    pub async fn handle_json(
-        &mut self,
-        conn_id: ConnectionId,
-        json: Box<RawValue>,
-    ) -> Result<(), <Out as crate::JsonSink>::Error> {
-        if let Some(conn) = self.connections.get_mut(&conn_id) {
-            conn.send_json(json).await
-        } else {
-            Ok(())
-        }
-    }
-
+impl<T: Listener> WriteTask<T> {
     /// Task future, which will be run by [`Self::spawn`].
-    pub async fn task_future(mut self) {
+    ///
+    /// This is a simple loop, that reads instructions from the instruction
+    /// channel, and acts on them. It handles JSON messages, and going away
+    /// instructions. It also listens for the global shutdown signal from the
+    /// [`ServerShutdown`] struct.
+    #[instrument(skip(self), fields(conn_id = self.conn_id))]
+    pub async fn task_future(self) {
+        let WriteTask {
+            mut shutdown,
+            mut inst,
+            mut connection,
+            ..
+        } = self;
+        shutdown.mark_unchanged();
         loop {
             select! {
                 biased;
-                _ = &mut self.shutdown => {
-                    tracing::debug!("Shutdown signal received");
+                _ = shutdown.changed() => {
+                    debug!("shutdown signal received");
                     break;
                 }
-                inst = self.inst.recv() => {
+                inst = inst.recv() => {
                     let Some(inst) = inst else {
                         tracing::error!("Json stream has closed");
                         break;
                     };
 
                     match inst.body {
-                        InstructionBody::NewConn(conn) => {
-                            self.handle_new_conn(inst.conn_id, conn);
-                        }
                         InstructionBody::Json(json) => {
-                                if let Err(e) = self.handle_json(inst.conn_id, json).await {
-                                    tracing::error!(conn_id = inst.conn_id, %e, "Failed to write to connection");
-                                    continue;
-                                }
-
+                            if let Err(err) = connection.send_json(json).await {
+                                debug!(%err, "Failed to send json");
+                                break;
+                            }
                         }
                         InstructionBody::GoingAway => {
-                            self.handle_going_away(inst.conn_id);
+                            debug!("Send half has closed");
+                            break;
                         }
                     }
                 }

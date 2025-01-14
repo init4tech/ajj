@@ -14,15 +14,12 @@
 //!   [`IpcWriteTask`], [`WsWriteTask`].
 
 mod ipc;
-pub use ipc::{IpcListenerTask, IpcRouteTask, IpcWriteTask};
 
 mod shared;
-pub use shared::{
-    Instruction, InstructionBody, ListenerTask, Manager, RouteTask, ServerShutdown, WriteTask,
-};
+pub use shared::{Instruction, InstructionBody, ServerShutdown};
+pub(crate) use shared::{ListenerTask, RouteTask, WriteTask};
 
 mod r#trait;
 pub use r#trait::{Connect, In, JsonReqStream, JsonSink, Listener, Out};
 
 mod ws;
-pub use ws::{WsListenerTask, WsRouteTask, WsWriteTask};
