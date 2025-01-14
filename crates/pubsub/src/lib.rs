@@ -61,3 +61,4 @@ mod r#trait;
 pub use r#trait::{Connect, In, JsonReqStream, JsonSink, Listener, Out};
 
 mod ws;
+pub use ws::WsJsonStream;

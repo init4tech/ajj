@@ -1,6 +1,4 @@
 //! JSON-RPC router.
-//!
-//!
 
 use crate::{
     routes::{MakeErasedHandler, MethodFuture, RouteFuture},

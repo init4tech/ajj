@@ -1,8 +1,6 @@
-use crate::{Handler, HandlerCtx, Route};
+use crate::{routes::HandlerArgs, Handler, HandlerCtx, Route};
 use serde_json::value::RawValue;
 use tower::Service;
-
-use super::HandlerArgs;
 
 /// A boxed, erased type that can be converted into a [`Route`]. Similar to
 /// axum's [`ErasedIntoRoute`]

@@ -51,7 +51,21 @@ pub trait Connect: Send + Sync + Sized {
     }
 }
 
-/// A [`Listener`] accepts incoming connections and produces ``
+/// A [`Listener`] accepts incoming connections and produces [`JsonSink`] and
+/// [`JsonReqStream`] objects.
+///
+/// Typically this is done by producing a combined object with a [`Stream`] and
+/// a [`Sink`], then using [`StreamExt::split`], however this trait allows for
+/// more complex implementations.
+///
+/// It is expected that the stream or sink may have adapter types like
+/// [`ReadJsonStream`] or [`WsJsonStream`] that wrap the underlying transport
+/// library objects.
+///
+/// [`WsJsonStream`]: crate::WsJsonStream
+/// [`ReadJsonStream`]: alloy::transports::ipc::ReadJsonStream
+/// [`Sink`]: futures_util::sink::Sink
+/// [`StreamExt::split`]: futures_util::stream::StreamExt::split
 pub trait Listener: Send + 'static {
     type RespSink: JsonSink;
     type ReqStream: JsonReqStream;
