@@ -4,14 +4,15 @@
 
 use crate::{
     routes::{MakeErasedHandler, MethodFuture, RouteFuture},
-    BoxedIntoRoute, ErasedIntoRoute, Handler, Method, MethodId, RegistrationError, Route,
+    BoxedIntoRoute, ErasedIntoRoute, Handler, HandlerCtx, Method, MethodId, RegistrationError,
+    Route,
 };
 use alloy::rpc::json_rpc::{
     PartiallySerializedRequest, Request, RequestMeta, Response, ResponsePayload,
 };
 use core::fmt;
 use serde_json::value::RawValue;
-use std::{borrow::Cow, collections::BTreeMap, convert::Infallible, sync::Arc};
+use std::{borrow::Cow, collections::BTreeMap, convert::Infallible, sync::Arc, task::Poll};
 use tower::Service;
 
 /// A JSON-RPC router. This is the top-level type for handling JSON-RPC
@@ -163,7 +164,7 @@ where
     pub fn fallback_service<T>(self, service: T) -> Self
     where
         T: Service<
-                Box<RawValue>,
+                (HandlerCtx, Box<RawValue>),
                 Response = ResponsePayload,
                 Error = Infallible,
                 Future: Send + 'static,
@@ -219,7 +220,7 @@ where
     pub fn route_service<T>(self, method: impl Into<Cow<'static, str>>, service: T) -> Self
     where
         T: Service<
-                Box<RawValue>,
+                (HandlerCtx, Box<RawValue>),
                 Response = ResponsePayload,
                 Error = Infallible,
                 Future: Send + 'static,
@@ -304,13 +305,18 @@ where
     ///
     /// This is a convenience method, primarily for testing. Use in production
     /// code is discouraged. Routers should not be left in incomplete states.
-    pub fn call_with_state(&self, req: PartiallySerializedRequest, state: S) -> MethodFuture {
+    pub fn call_with_state(
+        &self,
+        ctx: HandlerCtx,
+        req: PartiallySerializedRequest,
+        state: S,
+    ) -> MethodFuture {
         let Request {
             meta: RequestMeta { method, id, .. },
             params,
         } = req;
 
-        let fut = self.inner.call_with_state(method, params, state);
+        let fut = self.inner.call_with_state(method, ctx, params, state);
 
         MethodFuture::new(id, fut)
     }
@@ -318,8 +324,8 @@ where
 
 impl Router<()> {
     /// Call a method on the router.
-    pub fn handle_request(&self, req: PartiallySerializedRequest) -> MethodFuture {
-        self.call_with_state(req, ())
+    pub fn handle_request(&self, ctx: HandlerCtx, req: PartiallySerializedRequest) -> MethodFuture {
+        self.call_with_state(ctx, req, ())
     }
 }
 
@@ -329,37 +335,31 @@ impl<S> fmt::Debug for Router<S> {
     }
 }
 
-impl tower::Service<PartiallySerializedRequest> for Router<()> {
+impl tower::Service<(HandlerCtx, PartiallySerializedRequest)> for Router<()> {
     type Response = Response;
     type Error = Infallible;
     type Future = MethodFuture;
 
-    fn poll_ready(
-        &mut self,
-        _: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
+    fn poll_ready(&mut self, _: &mut std::task::Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, req: PartiallySerializedRequest) -> Self::Future {
-        self.handle_request(req)
+    fn call(&mut self, req: (HandlerCtx, PartiallySerializedRequest)) -> Self::Future {
+        self.handle_request(req.0, req.1)
     }
 }
 
-impl<'a> tower::Service<PartiallySerializedRequest> for &'a Router<()> {
+impl<'a> tower::Service<(HandlerCtx, PartiallySerializedRequest)> for &'a Router<()> {
     type Response = Response;
     type Error = Infallible;
     type Future = MethodFuture;
 
-    fn poll_ready(
-        &mut self,
-        _: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
+    fn poll_ready(&mut self, _: &mut std::task::Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, req: PartiallySerializedRequest) -> Self::Future {
-        self.handle_request(req)
+    fn call(&mut self, req: (HandlerCtx, PartiallySerializedRequest)) -> Self::Future {
+        self.handle_request(req.0, req.1)
     }
 }
 
@@ -532,7 +532,7 @@ impl<S> RouterInner<S> {
     pub fn route_service<T>(self, method: impl Into<Cow<'static, str>>, service: T) -> Self
     where
         T: Service<
-                Box<RawValue>,
+                (HandlerCtx, Box<RawValue>),
                 Response = ResponsePayload,
                 Error = Infallible,
                 Future: Send + 'static,
@@ -549,12 +549,13 @@ impl<S> RouterInner<S> {
     pub(crate) fn call_with_state(
         &self,
         method: Cow<'static, str>,
+        ctx: HandlerCtx,
         params: Box<RawValue>,
         state: S,
     ) -> RouteFuture {
         self.method_by_name(&method)
             .unwrap_or(&self.fallback)
-            .call_with_state(params, state)
+            .call_with_state(ctx, params, state)
     }
 }
 

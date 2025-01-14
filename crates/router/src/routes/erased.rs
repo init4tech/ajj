@@ -1,6 +1,8 @@
-use crate::{Handler, Route};
+use crate::{Handler, HandlerCtx, Route};
 use serde_json::value::RawValue;
 use tower::Service;
+
+use super::HandlerArgs;
 
 /// A boxed, erased type that can be converted into a [`Route`]. Similar to
 /// axum's [`ErasedIntoRoute`]
@@ -22,9 +24,10 @@ pub(crate) trait ErasedIntoRoute<S>: Send + Sync {
     #[allow(dead_code)]
     fn call_with_state(
         self: Box<Self>,
+        ctx: HandlerCtx,
         params: Box<RawValue>,
         state: S,
-    ) -> <Route as Service<Box<RawValue>>>::Future;
+    ) -> <Route as Service<HandlerArgs>>::Future;
 }
 
 /// A boxed, erased type that can be converted into a [`Route`]. It is a
@@ -112,10 +115,11 @@ where
 
     fn call_with_state(
         self: Box<Self>,
+        ctx: HandlerCtx,
         params: Box<RawValue>,
         state: S,
-    ) -> <Route as Service<Box<RawValue>>>::Future {
-        self.into_route(state).call(params)
+    ) -> <Route as Service<HandlerArgs>>::Future {
+        self.into_route(state).call((ctx, params))
     }
 }
 

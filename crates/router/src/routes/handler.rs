@@ -1,4 +1,5 @@
-use crate::Route;
+use crate::routes::HandlerArgs;
+use crate::{HandlerCtx, Route};
 use alloy::rpc::json_rpc::{ResponsePayload, RpcObject};
 use serde_json::value::RawValue;
 use std::{convert::Infallible, future::Future, marker::PhantomData, pin::Pin, task};
@@ -26,7 +27,7 @@ pub trait Handler<T, S>: Clone + Send + Sync + Sized + 'static {
     type Future: Future<Output = ResponsePayload> + Send + 'static;
 
     /// Call the handler with the given request and state.
-    fn call_with_state(self, params: Box<RawValue>, state: S) -> Self::Future;
+    fn call_with_state(self, ctx: HandlerCtx, params: Box<RawValue>, state: S) -> Self::Future;
 
     /// Create a new handler that wraps this handler and has some state.
     fn with_state(self, state: S) -> HandlerService<Self, T, S> {
@@ -76,7 +77,7 @@ impl<H, T, S> HandlerService<H, T, S> {
     }
 }
 
-impl<H, T, S> tower::Service<Box<RawValue>> for HandlerService<H, T, S>
+impl<H, T, S> tower::Service<HandlerArgs> for HandlerService<H, T, S>
 where
     Self: Clone,
     H: Handler<T, S>,
@@ -91,12 +92,12 @@ where
         task::Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, request: Box<RawValue>) -> Self::Future {
+    fn call(&mut self, request: HandlerArgs) -> Self::Future {
         let this = self.clone();
         Box::pin(async move {
             Ok(this
                 .handler
-                .call_with_state(request, this.state.clone())
+                .call_with_state(request.0, request.1, this.state.clone())
                 .await)
         })
     }
@@ -112,13 +113,40 @@ where
 {
     type Future = Pin<Box<dyn Future<Output = ResponsePayload> + Send>>;
 
-    fn call_with_state(self, req: Box<RawValue>, _state: S) -> Self::Future {
+    fn call_with_state(self, _ctx: HandlerCtx, req: Box<RawValue>, _state: S) -> Self::Future {
         Box::pin(async move {
             let Ok(params) = serde_json::from_str(req.get()) else {
                 return ResponsePayload::invalid_params();
             };
 
             self(params)
+                .await
+                .map(ResponsePayload::Success)
+                .unwrap_or_else(ResponsePayload::internal_error_with_obj)
+                .serialize_payload()
+                .ok()
+                .unwrap_or_else(ResponsePayload::internal_error)
+        })
+    }
+}
+
+impl<F, Fut, Params, Payload, ErrData, S> Handler<(HandlerCtx, Params), S> for F
+where
+    F: FnOnce(HandlerCtx, Params) -> Fut + Clone + Send + Sync + 'static,
+    Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
+    Params: RpcObject,
+    Payload: RpcObject,
+    ErrData: RpcObject,
+{
+    type Future = Pin<Box<dyn Future<Output = ResponsePayload> + Send>>;
+
+    fn call_with_state(self, ctx: HandlerCtx, req: Box<RawValue>, _state: S) -> Self::Future {
+        Box::pin(async move {
+            let Ok(params) = serde_json::from_str(req.get()) else {
+                return ResponsePayload::invalid_params();
+            };
+
+            self(ctx, params)
                 .await
                 .map(ResponsePayload::Success)
                 .unwrap_or_else(ResponsePayload::internal_error_with_obj)
@@ -140,13 +168,43 @@ where
 {
     type Future = Pin<Box<dyn Future<Output = ResponsePayload> + Send>>;
 
-    fn call_with_state(self, req: Box<RawValue>, state: S) -> Self::Future {
+    fn call_with_state(self, _ctx: HandlerCtx, req: Box<RawValue>, state: S) -> Self::Future {
         Box::pin(async move {
             let Ok(params) = serde_json::from_str(req.get()) else {
                 return ResponsePayload::invalid_params();
             };
 
             self(params, state)
+                .await
+                .map(ResponsePayload::Success)
+                .unwrap_or_else(ResponsePayload::internal_error_with_obj)
+                .serialize_payload()
+                .ok()
+                .unwrap_or_else(|| {
+                    ResponsePayload::internal_error_message("Failed to serialize response".into())
+                })
+        })
+    }
+}
+
+impl<F, Fut, Params, Payload, ErrData, S> Handler<(HandlerCtx, Params, S), S> for F
+where
+    F: FnOnce(HandlerCtx, Params, S) -> Fut + Clone + Send + Sync + 'static,
+    Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
+    Params: RpcObject,
+    Payload: RpcObject,
+    ErrData: RpcObject,
+    S: Send + Sync + 'static,
+{
+    type Future = Pin<Box<dyn Future<Output = ResponsePayload> + Send>>;
+
+    fn call_with_state(self, ctx: HandlerCtx, req: Box<RawValue>, state: S) -> Self::Future {
+        Box::pin(async move {
+            let Ok(params) = serde_json::from_str(req.get()) else {
+                return ResponsePayload::invalid_params();
+            };
+
+            self(ctx, params, state)
                 .await
                 .map(ResponsePayload::Success)
                 .unwrap_or_else(ResponsePayload::internal_error_with_obj)

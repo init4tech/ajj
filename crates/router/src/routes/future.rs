@@ -1,7 +1,7 @@
+use crate::routes::HandlerArgs;
 use alloy::rpc::json_rpc::{Id, Response, ResponsePayload};
 use core::fmt;
 use pin_project::pin_project;
-use serde_json::value::RawValue;
 use std::{
     convert::Infallible,
     future::Future,
@@ -18,16 +18,13 @@ pub struct RouteFuture {
     ///
     /// [`Route`]: crate::routes::Route
     #[pin]
-    inner: Oneshot<BoxCloneSyncService<Box<RawValue>, ResponsePayload, Infallible>, Box<RawValue>>,
+    inner: Oneshot<BoxCloneSyncService<HandlerArgs, ResponsePayload, Infallible>, HandlerArgs>,
 }
 
 impl RouteFuture {
     /// Create a new route future.
     pub fn new(
-        inner: Oneshot<
-            BoxCloneSyncService<Box<RawValue>, ResponsePayload, Infallible>,
-            Box<RawValue>,
-        >,
+        inner: Oneshot<BoxCloneSyncService<HandlerArgs, ResponsePayload, Infallible>, HandlerArgs>,
     ) -> Self {
         Self { inner }
     }

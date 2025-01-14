@@ -1,4 +1,4 @@
-use crate::{routes::RouteFuture, BoxedIntoRoute, Route};
+use crate::{routes::RouteFuture, BoxedIntoRoute, HandlerCtx, Route};
 use serde_json::value::RawValue;
 
 /// A method, which may be ready to handle requests or may need to be
@@ -23,10 +23,14 @@ impl<S> Clone for Method<S> {
 
 impl<S> Method<S> {
     /// Call the method with the given state and request.
-    pub fn call_with_state(&self, req: Box<RawValue>, state: S) -> RouteFuture {
+    pub fn call_with_state(&self, ctx: HandlerCtx, req: Box<RawValue>, state: S) -> RouteFuture {
         match self {
-            Self::Ready(route) => route.clone().oneshot_inner_owned(req),
-            Self::Needs(handler) => handler.clone().0.into_route(state).oneshot_inner_owned(req),
+            Self::Ready(route) => route.clone().oneshot_inner_owned(ctx, req),
+            Self::Needs(handler) => handler
+                .clone()
+                .0
+                .into_route(state)
+                .oneshot_inner_owned(ctx, req),
         }
     }
 }

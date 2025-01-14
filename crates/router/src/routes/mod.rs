@@ -11,6 +11,7 @@ pub use handler::{Handler, HandlerService};
 mod method;
 pub(crate) use method::Method;
 
+use crate::HandlerCtx;
 use alloy::rpc::json_rpc::ResponsePayload;
 use serde_json::value::RawValue;
 use std::{
@@ -19,19 +20,22 @@ use std::{
 };
 use tower::{util::BoxCloneSyncService, Service, ServiceExt};
 
+/// The arguments passed to a [`Handler`].
+pub type HandlerArgs = (HandlerCtx, Box<RawValue>);
+
 /// A JSON-RPC handler for a specific method.
 ///
 /// A route is a [`BoxCloneSyncService`] that takes JSON parameters and returns
 /// a JSON-RPC [`ResponsePayload`]. Routes SHOULD be infallible. I.e. any error
 /// that occurs during the handling of a request should be represented as a
 /// JSON-RPC error response, rather than having the service return an `Err`.
-pub struct Route(tower::util::BoxCloneSyncService<Box<RawValue>, ResponsePayload, Infallible>);
+pub struct Route(tower::util::BoxCloneSyncService<HandlerArgs, ResponsePayload, Infallible>);
 
 impl Route {
     /// Create a new route from a service.
     pub fn new<S>(inner: S) -> Self
     where
-        S: Service<Box<RawValue>, Response = ResponsePayload, Error = Infallible>
+        S: Service<HandlerArgs, Response = ResponsePayload, Error = Infallible>
             + Clone
             + Send
             + Sync
@@ -49,13 +53,13 @@ impl Route {
     }
 
     /// Create a one-shot future for the given request.
-    pub(crate) fn oneshot_inner(&mut self, req: Box<RawValue>) -> RouteFuture {
-        RouteFuture::new(self.0.clone().oneshot(req))
+    pub(crate) fn oneshot_inner(&mut self, ctx: HandlerCtx, req: Box<RawValue>) -> RouteFuture {
+        RouteFuture::new(self.0.clone().oneshot((ctx, req)))
     }
 
     /// Variant of [`Route::oneshot_inner`] that takes ownership of the route to avoid cloning.
-    pub(crate) fn oneshot_inner_owned(self, req: Box<RawValue>) -> RouteFuture {
-        RouteFuture::new(self.0.oneshot(req))
+    pub(crate) fn oneshot_inner_owned(self, ctx: HandlerCtx, req: Box<RawValue>) -> RouteFuture {
+        RouteFuture::new(self.0.oneshot((ctx, req)))
     }
 }
 
@@ -66,13 +70,13 @@ impl Clone for Route {
     }
 }
 
-impl From<BoxCloneSyncService<Box<RawValue>, ResponsePayload, Infallible>> for Route {
-    fn from(inner: BoxCloneSyncService<Box<RawValue>, ResponsePayload, Infallible>) -> Self {
+impl From<BoxCloneSyncService<HandlerArgs, ResponsePayload, Infallible>> for Route {
+    fn from(inner: BoxCloneSyncService<HandlerArgs, ResponsePayload, Infallible>) -> Self {
         Self(inner)
     }
 }
 
-impl Service<Box<RawValue>> for Route {
+impl Service<HandlerArgs> for Route {
     type Response = ResponsePayload;
 
     type Error = Infallible;
@@ -83,8 +87,8 @@ impl Service<Box<RawValue>> for Route {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, req: Box<RawValue>) -> Self::Future {
-        self.oneshot_inner(req)
+    fn call(&mut self, req: HandlerArgs) -> Self::Future {
+        self.oneshot_inner(req.0, req.1)
     }
 }
 

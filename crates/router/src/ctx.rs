@@ -2,7 +2,11 @@ use serde_json::value::RawValue;
 use tokio::sync::mpsc;
 
 /// A context for handler requests that allow the handler to send notifications
-/// in long-running tasks (e.g. subscriptions).
+/// from long-running tasks (e.g. subscriptions).
+///
+/// This is primarily intended to enable subscriptions over pubsub transports
+/// to send notifications to clients. It is expected that JSON sent via the
+/// notification channel is a valid JSON-RPC object
 #[derive(Debug, Clone, Default)]
 pub struct HandlerCtx {
     pub(crate) notifications: Option<mpsc::Sender<Box<RawValue>>>,

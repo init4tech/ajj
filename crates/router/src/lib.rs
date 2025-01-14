@@ -40,7 +40,7 @@ pub use router::Router;
 #[cfg(test)]
 mod test {
 
-    use crate::router::RouterInner;
+    use crate::{router::RouterInner, routes::HandlerArgs};
     use alloy::rpc::json_rpc::{ErrorPayload, ResponsePayload};
     use serde_json::value::RawValue;
     use std::borrow::Cow;
@@ -51,7 +51,7 @@ mod test {
         let router: RouterInner<()> = RouterInner::new()
             .route_service(
                 "hello_world",
-                tower::service_fn(|_: Box<RawValue>| async {
+                tower::service_fn(|_: HandlerArgs| async {
                     Ok(
                         ResponsePayload::<(), u8>::internal_error_with_message_and_obj(
                             Cow::Borrowed("Hello, world!"),
@@ -68,7 +68,12 @@ mod test {
             .with_state(&3u64);
 
         let res = router
-            .call_with_state("hello_world".into(), Default::default(), ())
+            .call_with_state(
+                "hello_world".into(),
+                Default::default(),
+                Default::default(),
+                (),
+            )
             .await
             .expect("infallible")
             .deserialize_error()
@@ -87,6 +92,7 @@ mod test {
             router
                 .call_with_state(
                     "foo".into(),
+                    Default::default(),
                     RawValue::from_string("{}".to_owned()).unwrap(),
                     ()
                 )

@@ -188,7 +188,7 @@ where
 
                     let id = item.meta.id.clone();
                     let span = debug_span!("ipc request handling", id = %id, method = item.meta.method.as_ref());
-                    let fut = router.handle_request(item);
+                    let fut = router.handle_request(write_task.clone().into(), item);
                     let write_task = write_task.clone();
 
                         // Run the future in a new task.

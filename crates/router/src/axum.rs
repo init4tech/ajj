@@ -20,7 +20,10 @@ where
                 }
             };
 
-            let response = unwrap_infallible!(self.call_with_state(json, state).await);
+            // Default handler ctx does not allow for notifications, which is
+            // what we want over HTTP.
+            let response =
+                unwrap_infallible!(self.call_with_state(Default::default(), json, state).await);
 
             Json(response).into_response()
         })
