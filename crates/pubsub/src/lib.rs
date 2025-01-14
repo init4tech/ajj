@@ -5,12 +5,11 @@
 //! ## Task Structure
 //!
 //! There are 3 tasks:
-//! - `Listener` - listens for new connections, and spawns `RouteTask`s for
-//!    each. E.g. [`WsListener`], [`IpcListener`].
-//! - `RouteTask` - reads requests from a connection, and spawns a
-//!   [`tokio::task`] for each request. This is completely generic over the
-//!   stream type.
-//! - `WriteTask` - Manages outbound connections, receives responses from the
+//! - [`ListenerTask`] - listens for new connections, and spawns [`RouteTask`]s
+//!    for each. E.g. [`WsListenerTask`], [`IpcListenerTask`].
+//! - [`RouteTask`] - reads requests from a connection, and spawns a
+//!   [`tokio::task`] for each request.
+//! - [`WriteTask`] - Manages outbound connections, receives responses from the
 //!   router, and writes responses to the relevant connection. E.g.
 //!   [`IpcWriteTask`], [`WsWriteTask`].
 
@@ -23,7 +22,7 @@ pub use shared::{
 };
 
 mod r#trait;
-pub use r#trait::{In, JsonReqStream, JsonSink, Listener, Out};
+pub use r#trait::{Connect, In, JsonReqStream, JsonSink, Listener, Out};
 
 mod ws;
-pub use ws::{WsListenerTask, WsWriteTask};
+pub use ws::{WsListenerTask, WsRouteTask, WsWriteTask};

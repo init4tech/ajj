@@ -1,13 +1,13 @@
 use crate::{In, Listener, Out};
-use alloy::rpc::json_rpc::{PartiallySerializedRequest, Response};
+use alloy::rpc::json_rpc::Response;
 use serde_json::value::RawValue;
 use tokio::{
     select,
     sync::{mpsc, oneshot},
     task::JoinHandle,
 };
-use tokio_stream::{Stream, StreamExt};
-use tracing::{debug, debug_span, error, info_span, trace, Instrument};
+use tokio_stream::StreamExt;
+use tracing::{debug, debug_span, error, instrument, trace, Instrument};
 
 /// Type alias for identifying connections.
 pub type ConnectionId = u64;
@@ -26,29 +26,33 @@ impl<T> ListenerTask<T>
 where
     T: Listener,
 {
-    pub fn spawn(self) -> JoinHandle<()> {
-        let future = async move {
-            let ListenerTask {
-                listener,
-                mut manager,
-            } = self;
+    /// Task future, which will be run by [`Self::spawn`].
+    pub async fn task_future(self) {
+        let ListenerTask {
+            listener,
+            mut manager,
+        } = self;
 
-            loop {
-                let (resp_sink, req_stream) = match listener.accept().await {
-                    Ok((resp_sink, req_stream)) => (resp_sink, req_stream),
-                    Err(err) => {
-                        error!(%err, "Failed to accept connection");
-                        // TODO: should these errors be considered persistent?
-                        continue;
-                    }
-                };
-
-                if let Err(err) = manager.handle_new_connection(req_stream, resp_sink).await {
-                    error!(%err, "Failed to enroll connection, WriteTask has gone away.");
-                    break;
+        loop {
+            let (resp_sink, req_stream) = match listener.accept().await {
+                Ok((resp_sink, req_stream)) => (resp_sink, req_stream),
+                Err(err) => {
+                    error!(%err, "Failed to accept connection");
+                    // TODO: should these errors be considered persistent?
+                    continue;
                 }
+            };
+
+            if let Err(err) = manager.handle_new_connection(req_stream, resp_sink).await {
+                error!(%err, "Failed to enroll connection, WriteTask has gone away.");
+                break;
             }
-        };
+        }
+    }
+
+    /// Spawn the future produced by [`Self::task_future`].
+    pub fn spawn(self) -> JoinHandle<()> {
+        let future = self.task_future();
         tokio::spawn(future)
     }
 }
@@ -101,7 +105,7 @@ impl<T: Listener> Manager<T> {
         self.write_task.send(instruction).await
     }
 
-    /// Spawn a new route task.
+    /// Spawn a new [`RouteTask`].
     pub fn spawn_route_task(&mut self, conn_id: ConnectionId, requests: In<T>) -> JoinHandle<()>
 where {
         RouteTask::<T> {
@@ -160,73 +164,77 @@ impl<T> RouteTask<T>
 where
     T: crate::Listener,
 {
-    pub fn spawn(self) -> tokio::task::JoinHandle<()> {
-        let future = async move {
-            let RouteTask {
-                router,
-                conn_id,
-                mut requests,
-                write_task,
-            } = self;
+    /// Task future, which will be run by [`Self::spawn`].
+    #[instrument(name = "RouteTask", skip(self), fields(conn_id = self.conn_id))]
+    pub async fn task_future(self) {
+        let RouteTask {
+            router,
+            conn_id,
+            mut requests,
+            write_task,
+        } = self;
 
-            loop {
-                select! {
-                    biased;
-                    _ = write_task.closed() => {
-                        debug!("IpcWriteTask has gone away");
+        loop {
+            select! {
+                biased;
+                _ = write_task.closed() => {
+                    debug!("IpcWriteTask has gone away");
+                    break;
+                }
+                item = requests.next() => {
+                    let Some(item) = item else {
+                        trace!("IPC read stream has closed");
+                        let _ = write_task.send(
+                            Instruction {
+                                conn_id,
+                                body: InstructionBody::GoingAway,
+                            }
+                        ).await;
                         break;
-                    }
-                    item = requests.next() => {
-                        let Some(item) = item else {
-                            trace!("IPC read stream has closed");
+                    };
+
+                    let id = item.meta.id.clone();
+                    let span = debug_span!("ipc request handling", id = %id, method = item.meta.method.as_ref());
+                    let fut = router.handle_request(item);
+                    let write_task = write_task.clone();
+
+                        // Run the future in a new task.
+                        tokio::spawn(
+                        async move {
+                            // Run the request handler and serialize the
+                            // response.
+                            let res = fut.await.expect("infallible");
+                            let ser = match serde_json::to_string(&res) {
+                                Ok(res) => res,
+                                Err(err) => {
+                                    error!(?res, %err, "Failed to serialize response");
+
+                                    serde_json::to_string(&Response::<(),()>::internal_error_message(id, "Failed to serialize response".into())).expect("double serialization error")
+
+
+                                }
+                            };
+                            let rv = RawValue::from_string(ser).expect("known to be valid JSON");
+                            // Send the response to the write task.
+                            // we don't care if the receiver has gone away,
+                            // as the task is done regardless.
                             let _ = write_task.send(
                                 Instruction {
                                     conn_id,
-                                    body: InstructionBody::GoingAway,
+                                    body: rv.into(),
                                 }
                             ).await;
-                            break;
-                        };
-
-                        let id = item.meta.id.clone();
-                        let span = debug_span!("ipc request handling", id = %id, method = item.meta.method.as_ref());
-                        let fut = router.handle_request(item);
-                        let write_task = write_task.clone();
-
-                         // Run the future in a new task.
-                         tokio::spawn(
-                            async move {
-                                // Run the request handler and serialize the
-                                // response.
-                                let res = fut.await.expect("infallible");
-                                let ser = match serde_json::to_string(&res) {
-                                    Ok(res) => res,
-                                    Err(err) => {
-                                        error!(?res, %err, "Failed to serialize response");
-
-                                        serde_json::to_string(&Response::<(),()>::internal_error_message(id, "Failed to serialize response".into())).expect("double serialization error")
-
-
-                                    }
-                                };
-                                let rv = RawValue::from_string(ser).expect("known to be valid JSON");
-                                // Send the response to the write task.
-                                // we don't care if the receiver has gone away,
-                                // as the task is done regardless.
-                                let _ = write_task.send(
-                                    Instruction {
-                                        conn_id,
-                                        body: rv.into(),
-                                    }
-                                ).await;
-                            }
-                            .instrument(span)
-                        );
-                    }
+                        }
+                        .instrument(span)
+                    );
                 }
             }
         }
-        .instrument(info_span!("IpcRouteTask"));
+    }
+
+    /// Spawn the future produced by [`Self::task_future`].
+    pub fn spawn(self) -> tokio::task::JoinHandle<()> {
+        let future = self.task_future();
         tokio::spawn(future)
     }
 }
@@ -234,7 +242,7 @@ where
 pub struct WriteTask<Out> {
     /// Shutdown signal.
     ///
-    /// Shutdowns bubble back up to [`IpcRouteTask`] and [`IpcListener`] when
+    /// Shutdowns bubble back up to [`RouteTask`] and [`ListenerTask`] when
     /// the write task is dropped, via the closed `inst` channel.
     pub(crate) shutdown: tokio::sync::oneshot::Receiver<()>,
 
@@ -303,7 +311,7 @@ where
         }
     }
 
-    /// Spawn a write task to write responses to outbound channels.
+    /// Spawn the future produced by [`Self::task_future`].
     pub fn spawn(self) -> JoinHandle<()> {
         tokio::spawn(self.task_future())
     }

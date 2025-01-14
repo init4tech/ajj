@@ -1,22 +1,16 @@
-use crate::{shared::Manager, InstructionBody, WriteTask};
+use crate::WriteTask;
 use alloy::rpc::json_rpc::PartiallySerializedRequest;
 use futures_util::{
-    stream::{SplitSink, SplitStream},
-    Sink, SinkExt, Stream, StreamExt,
+    stream::{SplitSink, SplitStream}, SinkExt, Stream, StreamExt,
 };
 use serde_json::value::RawValue;
 use std::{
-    future::Future,
     pin::Pin,
     task::{ready, Context, Poll},
 };
-use tokio::{
-    net::{TcpListener, TcpStream},
-    select,
-    task::JoinHandle,
-};
+use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::{accept_async, tungstenite::protocol::Message, WebSocketStream};
-use tracing::{debug, debug_span, error, trace, Instrument};
+use tracing::{debug_span, error, trace, Instrument};
 
 /// Sending half of a [`WebSocketStream`].
 pub type SendHalf = SplitSink<WebSocketStream<TcpStream>, Message>;
@@ -106,12 +100,10 @@ impl Stream for WsJsonStream {
 impl crate::JsonSink for SendHalf {
     type Error = tokio_tungstenite::tungstenite::Error;
 
-    fn send_json(
+    async fn send_json(
         &mut self,
         json: Box<RawValue>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        async move { self.send(Message::text(json.get())).await }
-    }
+    ) -> Result<(), Self::Error> { self.send(Message::text(json.get())).await }
 }
 
 impl crate::Listener for TcpListener {
@@ -121,19 +113,17 @@ impl crate::Listener for TcpListener {
 
     type Error = tokio_tungstenite::tungstenite::Error;
 
-    fn accept(
+    async fn accept(
         &self,
-    ) -> impl Future<Output = Result<(Self::RespSink, Self::ReqStream), Self::Error>> + Send {
-        async move {
-            let (stream, socket_addr) = self.accept().await?;
+    ) -> Result<(Self::RespSink, Self::ReqStream), Self::Error> {
+        let (stream, socket_addr) = self.accept().await?;
 
-            let span = debug_span!("ws connection", remote_addr = %socket_addr);
+        let span = debug_span!("ws connection", remote_addr = %socket_addr);
 
-            let ws_stream = accept_async(stream).instrument(span).await?;
+        let ws_stream = accept_async(stream).instrument(span).await?;
 
-            let (send, recv) = ws_stream.split();
+        let (send, recv) = ws_stream.split();
 
-            Ok((send, recv.into()))
-        }
+        Ok((send, recv.into()))
     }
 }
