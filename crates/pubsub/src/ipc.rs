@@ -37,9 +37,7 @@ impl<'a> crate::Connect for ListenerOptions<'a> {
 
     type Error = io::Error;
 
-    fn make_listener(
-        self,
-    ) -> impl std::future::Future<Output = Result<Self::Listener, Self::Error>> + Send {
-        async move { self.create_tokio() }
+    async fn make_listener(self) -> Result<Self::Listener, Self::Error> {
+        self.create_tokio()
     }
 }

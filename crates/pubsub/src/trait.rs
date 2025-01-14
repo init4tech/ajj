@@ -22,6 +22,14 @@ pub trait Connect: Send + Sync + Sized {
     /// Create the listener
     fn make_listener(self) -> impl Future<Output = Result<Self::Listener, Self::Error>> + Send;
 
+    /// Configure the instruction buffer size for each task spawned by the
+    /// listener. This buffer will be allocated for EACH connection, and
+    /// represents the backpressure limit for notifications and responses
+    /// sent to the client.
+    fn instruction_buffer(&self) -> usize {
+        crate::shared::DEFAULT_INSTRUCTION_BUFFER_PER_TASK
+    }
+
     fn run(
         self,
         router: router::Router<()>,
@@ -34,6 +42,7 @@ pub trait Connect: Send + Sync + Sized {
                     shutdown: rx,
                     next_id: 0,
                     router,
+                    instruction_buffer_per_task: crate::shared::DEFAULT_INSTRUCTION_BUFFER_PER_TASK,
                 },
             }
             .spawn();

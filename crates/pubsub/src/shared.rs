@@ -3,11 +3,14 @@ use alloy::rpc::json_rpc::Response;
 use serde_json::value::RawValue;
 use tokio::{
     select,
-    sync::{mpsc, watch},
+    sync::{mpsc, oneshot, watch},
     task::JoinHandle,
 };
 use tokio_stream::StreamExt;
 use tracing::{debug, debug_span, error, instrument, trace, Instrument};
+
+/// Default instruction buffer size per task.
+pub const DEFAULT_INSTRUCTION_BUFFER_PER_TASK: usize = 15;
 
 /// Type alias for identifying connections.
 pub type ConnectionId = u64;
@@ -73,6 +76,8 @@ pub(crate) struct ConnectionManager {
     pub(crate) next_id: ConnectionId,
 
     pub(crate) router: router::Router<()>,
+
+    pub(crate) instruction_buffer_per_task: usize,
 }
 
 impl ConnectionManager {
@@ -95,20 +100,23 @@ impl ConnectionManager {
         requests: In<T>,
         connection: Out<T>,
     ) -> (RouteTask<T>, WriteTask<T>) {
-        // TODO: no magic constant. Configurable.
-        let (tx, rx) = mpsc::channel(100);
+        let (tx, rx) = mpsc::channel(self.instruction_buffer_per_task);
+
+        let (gone_tx, gone_rx) = oneshot::channel();
 
         let rt = RouteTask {
             router: self.router(),
             conn_id,
             write_task: tx,
             requests,
+            gone: gone_tx,
         };
 
         let wt = WriteTask {
             shutdown: self.shutdown.clone(),
+            gone: gone_rx,
             conn_id,
-            inst: rx,
+            json: rx,
             connection,
         };
 
@@ -130,21 +138,6 @@ impl ConnectionManager {
     }
 }
 
-/// Contains the action that the [`WriteTask`] should take.
-pub enum Instruction {
-    /// Json should be written.
-    Json(Box<RawValue>),
-    /// Connection is going away, and can be removed from the [`WriteTask`]'s
-    /// management.
-    GoingAway,
-}
-
-impl From<Box<RawValue>> for Instruction {
-    fn from(json: Box<RawValue>) -> Self {
-        Instruction::Json(json)
-    }
-}
-
 /// Task that reads requests from a stream, and routes them to the
 /// [`router::Router`], ensures responses are sent to the [`WriteTask`].
 pub struct RouteTask<T: crate::Listener> {
@@ -153,9 +146,11 @@ pub struct RouteTask<T: crate::Listener> {
     /// Connection ID for the connection serviced by this task.
     pub(crate) conn_id: ConnectionId,
     /// Sender to the write task.
-    pub(crate) write_task: mpsc::Sender<Instruction>,
+    pub(crate) write_task: mpsc::Sender<Box<RawValue>>,
     /// Stream of requests.
     pub(crate) requests: In<T>,
+    /// Sender to the [`WriteTask`], to notify it that this task is done.
+    pub(crate) gone: oneshot::Sender<()>,
 }
 
 impl<T> RouteTask<T>
@@ -174,6 +169,7 @@ where
             router,
             mut requests,
             write_task,
+            gone,
             ..
         } = self;
 
@@ -187,10 +183,6 @@ where
                 item = requests.next() => {
                     let Some(item) = item else {
                         trace!("IPC read stream has closed");
-                        let _ = write_task.send(
-                            Instruction::GoingAway
-
-                        ).await;
                         break;
                     };
 
@@ -220,7 +212,7 @@ where
                             // we don't care if the receiver has gone away,
                             // as the task is done regardless.
                             let _ = write_task.send(
-                                rv.into()
+                                rv
                             ).await;
                         }
                         .instrument(span)
@@ -228,6 +220,8 @@ where
                 }
             }
         }
+        // No funny business. Drop the gone signal.
+        drop(gone);
     }
 
     /// Spawn the future produced by [`Self::task_future`].
@@ -243,11 +237,14 @@ pub struct WriteTask<T: Listener> {
     /// the write task is dropped, via the closed `inst` channel.
     pub(crate) shutdown: watch::Receiver<()>,
 
+    /// Signal that the connection has gone away.
+    pub(crate) gone: oneshot::Receiver<()>,
+
     /// ID of the connection.
     pub(crate) conn_id: ConnectionId,
 
-    /// Inbound [`Instruction`]s.
-    pub(crate) inst: mpsc::Receiver<Instruction>,
+    /// JSON to be written to the outbound connection.
+    pub(crate) json: mpsc::Receiver<Box<RawValue>>,
 
     /// Outbound connections.
     pub(crate) connection: Out<T>,
@@ -264,7 +261,8 @@ impl<T: Listener> WriteTask<T> {
     pub async fn task_future(self) {
         let WriteTask {
             mut shutdown,
-            mut inst,
+            mut gone,
+            mut json,
             mut connection,
             ..
         } = self;
@@ -272,27 +270,22 @@ impl<T: Listener> WriteTask<T> {
         loop {
             select! {
                 biased;
+                _ = &mut gone => {
+                    debug!("Connection has gone away");
+                    break;
+                }
                 _ = shutdown.changed() => {
                     debug!("shutdown signal received");
                     break;
                 }
-                inst = inst.recv() => {
-                    let Some(inst) = inst else {
+                json = json.recv() => {
+                    let Some(json) = json else {
                         tracing::error!("Json stream has closed");
                         break;
                     };
-
-                    match inst {
-                        Instruction::Json(json) => {
-                            if let Err(err) = connection.send_json(json).await {
-                                debug!(%err, "Failed to send json");
-                                break;
-                            }
-                        }
-                        Instruction::GoingAway => {
-                            debug!("Send half has closed");
-                            break;
-                        }
+                    if let Err(err) = connection.send_json(json).await {
+                        debug!(%err, "Failed to send json");
+                        break;
                     }
                 }
             }

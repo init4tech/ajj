@@ -92,11 +92,8 @@ impl Stream for WsJsonStream {
 impl crate::JsonSink for SendHalf {
     type Error = tokio_tungstenite::tungstenite::Error;
 
-    fn send_json(
-        &mut self,
-        json: Box<RawValue>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        async move { self.send(Message::text(json.get())).await }
+    async fn send_json(&mut self, json: Box<RawValue>) -> Result<(), Self::Error> {
+        self.send(Message::text(json.get())).await
     }
 }
 
@@ -107,20 +104,16 @@ impl crate::Listener for TcpListener {
 
     type Error = tokio_tungstenite::tungstenite::Error;
 
-    fn accept(
-        &self,
-    ) -> impl Future<Output = Result<(Self::RespSink, Self::ReqStream), Self::Error>> + Send {
-        async move {
-            let (stream, socket_addr) = self.accept().await?;
+    async fn accept(&self) -> Result<(Self::RespSink, Self::ReqStream), Self::Error> {
+        let (stream, socket_addr) = self.accept().await?;
 
-            let span = debug_span!("ws connection", remote_addr = %socket_addr);
+        let span = debug_span!("ws connection", remote_addr = %socket_addr);
 
-            let ws_stream = accept_async(stream).instrument(span).await?;
+        let ws_stream = accept_async(stream).instrument(span).await?;
 
-            let (send, recv) = ws_stream.split();
+        let (send, recv) = ws_stream.split();
 
-            Ok((send, recv.into()))
-        }
+        Ok((send, recv.into()))
     }
 }
 
