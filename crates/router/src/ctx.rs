@@ -22,12 +22,14 @@ impl From<mpsc::Sender<Box<RawValue>>> for HandlerCtx {
 
 impl HandlerCtx {
     /// Instantiate a new handler context.
-    pub fn new() -> Self {
-        Default::default()
+    pub const fn new() -> Self {
+        Self {
+            notifications: None,
+        }
     }
 
     /// Instantiation a new handler context with notifications enabled.
-    pub fn with_notifications(notifications: mpsc::Sender<Box<RawValue>>) -> Self {
+    pub const fn with_notifications(notifications: mpsc::Sender<Box<RawValue>>) -> Self {
         Self {
             notifications: Some(notifications),
         }
@@ -35,7 +37,7 @@ impl HandlerCtx {
 
     /// Get a reference to the notification sender. This is used to
     /// send notifications over pubsub transports.
-    pub fn notifications(&self) -> Option<&mpsc::Sender<Box<RawValue>>> {
+    pub const fn notifications(&self) -> Option<&mpsc::Sender<Box<RawValue>>> {
         self.notifications.as_ref()
     }
 }

@@ -35,7 +35,6 @@ incremental = false
 
 [workspace.dependencies]
 router = { path = "./crates/router" }
-eth = { path = "./crates/eth" }
 pubsub = { path = "./crates/pubsub" }
 
 # alloy = { version = "0.9.2", features = ["json-rpc", "rpc-types"] }

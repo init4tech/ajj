@@ -41,7 +41,7 @@ pub(crate) struct BoxedIntoRoute<S>(pub(crate) Box<dyn ErasedIntoRoute<S>>);
 #[allow(dead_code)]
 impl<S> BoxedIntoRoute<S> {
     /// Convert this into a [`Route`] with the given state.
-    pub fn into_route(self, state: S) -> Route {
+    pub(crate) fn into_route(self, state: S) -> Route {
         self.0.into_route(state)
     }
 }
@@ -85,7 +85,7 @@ where
 impl<H, S> MakeErasedHandler<H, S> {
     /// Create a new [`MakeErasedHandler`] with the given handler and conversion
     /// function.
-    pub fn from_handler<T>(handler: H) -> Self
+    pub(crate) fn from_handler<T>(handler: H) -> Self
     where
         H: Handler<T, S>,
         T: Send + 'static,

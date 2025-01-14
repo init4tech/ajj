@@ -23,7 +23,12 @@ impl<S> Clone for Method<S> {
 
 impl<S> Method<S> {
     /// Call the method with the given state and request.
-    pub fn call_with_state(&self, ctx: HandlerCtx, req: Box<RawValue>, state: S) -> RouteFuture {
+    pub(crate) fn call_with_state(
+        &self,
+        ctx: HandlerCtx,
+        req: Box<RawValue>,
+        state: S,
+    ) -> RouteFuture {
         match self {
             Self::Ready(route) => route.clone().oneshot_inner_owned(ctx, req),
             Self::Needs(handler) => handler
@@ -40,7 +45,7 @@ where
     S: Clone,
 {
     /// Add state to a method, converting
-    pub fn with_state<S2>(self, state: &S) -> Method<S2> {
+    pub(crate) fn with_state<S2>(self, state: &S) -> Method<S2> {
         match self {
             Self::Ready(route) => Method::Ready(route),
             Self::Needs(handler) => Method::Ready(handler.0.into_route(state.clone())),

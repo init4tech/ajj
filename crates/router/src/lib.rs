@@ -12,7 +12,17 @@
 //!
 //! [`axum`]: https://docs.rs/axum/latest/axum/index.html
 //! [`axum::Router`]: https://docs.rs/axum/latest/axum/routing/struct.Router.html
+
+#![warn(
+    missing_copy_implementations,
+    missing_debug_implementations,
+    missing_docs,
+    unreachable_pub,
+    clippy::missing_const_for_fn,
+    rustdoc::all
+)]
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
+#![deny(unused_must_use, rust_2018_idioms)]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
 #[macro_use]
@@ -32,7 +42,7 @@ pub use primitives::MethodId;
 
 mod routes;
 pub(crate) use routes::{BoxedIntoRoute, ErasedIntoRoute, Method};
-pub use routes::{Handler, HandlerService, Route};
+pub use routes::{Handler, HandlerArgs, HandlerService, MethodFuture, Route};
 
 mod router;
 pub use router::Router;

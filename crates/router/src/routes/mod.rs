@@ -29,6 +29,7 @@ pub type HandlerArgs = (HandlerCtx, Box<RawValue>);
 /// a JSON-RPC [`ResponsePayload`]. Routes SHOULD be infallible. I.e. any error
 /// that occurs during the handling of a request should be represented as a
 /// JSON-RPC error response, rather than having the service return an `Err`.
+#[derive(Debug)]
 pub struct Route(tower::util::BoxCloneSyncService<HandlerArgs, ResponsePayload, Infallible>);
 
 impl Route {

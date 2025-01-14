@@ -23,7 +23,7 @@ pub struct RouteFuture {
 
 impl RouteFuture {
     /// Create a new route future.
-    pub fn new(
+    pub const fn new(
         inner: Oneshot<BoxCloneSyncService<HandlerArgs, ResponsePayload, Infallible>, HandlerArgs>,
     ) -> Self {
         Self { inner }
@@ -44,6 +44,8 @@ impl Future for RouteFuture {
     }
 }
 
+/// A future for a method, containing the request ID, and the inner future
+/// which resolves to the response.
 #[pin_project]
 pub struct MethodFuture {
     /// The request ID. Guaranteed to be `Some` until the future is completed.
@@ -55,7 +57,7 @@ pub struct MethodFuture {
 
 impl MethodFuture {
     /// Create a new method future.
-    pub fn new(id: Id, fut: RouteFuture) -> Self {
+    pub const fn new(id: Id, fut: RouteFuture) -> Self {
         Self {
             inner: fut,
             id: Some(id),

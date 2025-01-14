@@ -393,7 +393,7 @@ impl<S> fmt::Debug for RouterInner<S> {
 
 impl<S> RouterInner<S> {
     /// Create a new, empty router.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             routes: BTreeMap::new(),
 
@@ -410,7 +410,7 @@ impl<S> RouterInner<S> {
     ///
     /// Note that the type parameter `S2` is NOT the state you are adding to the
     /// router. It is additional state that must be added AFTER the state `S`.
-    pub fn with_state<S2>(self, state: &S) -> RouterInner<S2>
+    pub(crate) fn with_state<S2>(self, state: &S) -> RouterInner<S2>
     where
         S: Clone,
     {
@@ -527,7 +527,7 @@ impl<S> RouterInner<S> {
     ///
     /// Panic if the method name already exists in the router.
     #[track_caller]
-    pub fn route_service<T>(self, method: impl Into<Cow<'static, str>>, service: T) -> Self
+    pub(crate) fn route_service<T>(self, method: impl Into<Cow<'static, str>>, service: T) -> Self
     where
         T: Service<
                 (HandlerCtx, Box<RawValue>),
