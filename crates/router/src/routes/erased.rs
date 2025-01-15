@@ -33,8 +33,6 @@ pub(crate) trait ErasedIntoRoute<S>: Send + Sync {
 ///
 /// Similar to axum's [`BoxedIntoRoute`]
 ///
-/// Currently this is a placeholder to enable future convenience functions.
-///
 /// [`BoxedIntoRoute`]: https://github.com/tokio-rs/axum/blob/18a99da0b0baf9eeef326b34525826ae0b5a1370/axum/src/boxed.rs#L12
 pub(crate) struct BoxedIntoRoute<S>(pub(crate) Box<dyn ErasedIntoRoute<S>>);
 

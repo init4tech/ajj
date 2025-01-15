@@ -318,6 +318,12 @@ where
 
         MethodFuture::new(id, fut)
     }
+
+    /// Nest this router into a new Axum router, with the specified path.
+    #[cfg(feature = "axum")]
+    pub fn into_axum(self, path: &str) -> axum::Router<S> {
+        axum::Router::new().route(path, axum::routing::post(self))
+    }
 }
 
 impl Router<()> {
