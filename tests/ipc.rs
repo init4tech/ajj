@@ -1,5 +1,5 @@
 mod common;
-use common::test_router;
+use common::{test_router, TestClient};
 
 use ajj::pubsub::{Connect, ReadJsonStream, ServerShutdown};
 use futures_util::StreamExt;
@@ -41,6 +41,7 @@ async fn serve_ipc() -> (ServerShutdown, TempPath) {
 struct IpcClient {
     recv_half: ReadJsonStream<RecvHalf, Value>,
     send_half: SendHalf,
+    id: usize,
 }
 
 impl IpcClient {
@@ -50,38 +51,48 @@ impl IpcClient {
         Self {
             recv_half: recv_half.into(),
             send_half,
+            id: 0,
         }
     }
 
-    async fn send<S: serde::Serialize>(&mut self, msg: &S) {
+    async fn send_inner<S: serde::Serialize>(&mut self, msg: &S) {
         let s = serde_json::to_string(msg).unwrap();
 
         self.send_half.write_all(s.as_bytes()).await.unwrap();
     }
 
-    async fn recv(&mut self) -> serde_json::Value {
+    async fn recv_inner(&mut self) -> serde_json::Value {
         self.recv_half.next().await.unwrap()
+    }
+
+    fn next_id(&mut self) -> usize {
+        let id = self.id;
+        self.id += 1;
+        id
+    }
+}
+
+impl TestClient for IpcClient {
+    async fn send<S: serde::Serialize>(&mut self, method: &str, params: &S) {
+        let id = self.next_id();
+        self.send_inner(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params,
+        }))
+        .await;
+    }
+
+    async fn recv<D: serde::de::DeserializeOwned>(&mut self) -> D {
+        serde_json::from_value(self.recv_inner().await).unwrap()
     }
 }
 
 #[tokio::test]
 async fn basic_ipc() {
     let (_server, temp) = serve_ipc().await;
-    let mut client = IpcClient::new(&temp).await;
+    let client = IpcClient::new(&temp).await;
 
-    client
-        .send(&serde_json::json!({
-            "id": 1,
-            "method": "ping",
-            "params": []
-        }))
-        .await;
-
-    tracing::info!("sent");
-    let next = client.recv().await;
-    tracing::info!("received");
-    assert_eq!(
-        next,
-        serde_json::json!({"id": 1, "jsonrpc": "2.0", "result": "pong"})
-    );
+    common::basic_tests(client).await;
 }

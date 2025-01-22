@@ -1,4 +1,5 @@
 use ajj::{HandlerCtx, Router};
+use serde_json::Value;
 use tokio::time;
 
 /// Instantiate a router for testing.
@@ -24,4 +25,21 @@ pub fn test_router() -> ajj::Router<()> {
 
             Ok::<_, ()>(())
         })
+}
+
+/// Test clients
+pub trait TestClient {
+    async fn send<S: serde::Serialize>(&mut self, method: &str, params: &S);
+    async fn recv<D: serde::de::DeserializeOwned>(&mut self) -> D;
+}
+
+/// basic tests of the test router
+pub async fn basic_tests<T: TestClient>(mut client: T) {
+    client.send("ping", &()).await;
+
+    let next: Value = client.recv().await;
+    assert_eq!(
+        next,
+        serde_json::json!({"id": 0, "jsonrpc": "2.0", "result": "pong"})
+    );
 }
