@@ -1,6 +1,7 @@
 use ajj::{HandlerCtx, Router};
 use tokio::time;
 
+/// Instantiate a router for testing.
 pub fn test_router() -> ajj::Router<()> {
     Router::<()>::new()
         .route("ping", || async move { Ok::<_, ()>("pong") })

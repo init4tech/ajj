@@ -66,3 +66,7 @@ inherits = "dev"
 strip = true
 debug = false
 incremental = false
+
+[dev-dependencies]
+tempfile = "3.15.0"
+tracing-subscriber = "0.3.19"

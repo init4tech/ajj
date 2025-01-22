@@ -90,6 +90,9 @@
 
 #[cfg(feature = "ipc")]
 mod ipc;
+#[cfg(feature = "ipc")]
+#[doc(hidden)]
+pub use ipc::ReadJsonStream;
 
 mod shared;
 pub use shared::{ConnectionId, ServerShutdown, DEFAULT_NOTIFICATION_BUFFER_PER_CLIENT};
