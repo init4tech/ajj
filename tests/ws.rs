@@ -20,7 +20,7 @@ async fn serve_ws() -> ServerShutdown {
 
 struct WsClient {
     socket: WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
-    id: u64,
+    id: usize,
 }
 
 impl WsClient {
@@ -37,24 +37,21 @@ impl WsClient {
             _ => panic!("unexpected message type"),
         }
     }
+}
 
-    fn next_id(&mut self) -> u64 {
+impl TestClient for WsClient {
+    fn next_id(&mut self) -> usize {
         let id = self.id;
         self.id += 1;
         id
     }
-}
 
-impl TestClient for WsClient {
-    async fn send<S: serde::Serialize>(&mut self, method: &str, params: &S) {
-        let id = self.next_id();
-        self.send_inner(&serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": method,
-            "params": params,
-        }))
-        .await;
+    fn last_id(&self) -> usize {
+        self.id as usize - 1
+    }
+
+    async fn send_raw<S: serde::Serialize>(&mut self, msg: &S) {
+        self.send_inner(msg).await;
     }
 
     async fn recv<D: serde::de::DeserializeOwned>(&mut self) -> D {
