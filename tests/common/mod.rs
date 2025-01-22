@@ -10,7 +10,6 @@ pub fn test_router() -> ajj::Router<()> {
             "double",
             |params: usize| async move { Ok::<_, ()>(params * 2) },
         )
-        .route("return_state", |s: u8| async move { Ok::<_, ()>(s) })
         .route("notify", |ctx: HandlerCtx| async move {
             tokio::task::spawn(async move {
                 time::sleep(time::Duration::from_millis(100)).await;
@@ -41,5 +40,29 @@ pub async fn basic_tests<T: TestClient>(mut client: T) {
     assert_eq!(
         next,
         serde_json::json!({"id": 0, "jsonrpc": "2.0", "result": "pong"})
+    );
+
+    client.send("double", &5).await;
+    let next: Value = client.recv().await;
+    assert_eq!(
+        next,
+        serde_json::json!({"id": 1, "jsonrpc": "2.0", "result": 10})
+    );
+
+    client.send("notify", &()).await;
+
+    let now = std::time::Instant::now();
+
+    let next: Value = client.recv().await;
+    assert_eq!(
+        next,
+        serde_json::json!({"id": 2, "jsonrpc": "2.0", "result": null})
+    );
+
+    let next: Value = client.recv().await;
+    assert!(now.elapsed().as_millis() >= 100);
+    assert_eq!(
+        next,
+        serde_json::json!({"method": "notify", "result": "notified"})
     );
 }

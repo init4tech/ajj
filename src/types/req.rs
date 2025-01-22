@@ -134,11 +134,29 @@ impl Request {
         RawValue::from_string(self.id().to_string()).expect("valid json")
     }
 
-    /// Return a reference to the serialized method field.
+    /// Return a reference to the method str, deserialized.
+    ///
+    /// This is the method without the preceding and trailing quotes. E.g. if
+    /// the method is `foo`, this will return `&"foo"`.
     pub fn method(&self) -> &str {
-        // SAFETY: `method` is guaranteed to be valid JSON,
+        // SAFETY: `method` is guaranteed to be valid UTF-8,
         // and a valid slice of `bytes`.
         unsafe { core::str::from_utf8_unchecked(self.bytes.get_unchecked(self.method.clone())) }
+    }
+
+    /// Return a reference to the raw method str, with preceding and trailing
+    /// quotes. This is effectively the method as a [`RawValue`].
+    ///
+    /// E.g. if the method is `foo`, this will return `&r#""foo""#`.
+    pub fn raw_method(&self) -> &str {
+        // SAFETY: `params` is guaranteed to be valid JSON,
+        // and a valid slice of `bytes`.
+        unsafe {
+            core::str::from_utf8_unchecked(
+                self.bytes
+                    .get_unchecked(self.method.start - 1..self.method.end + 1),
+            )
+        }
     }
 
     /// Return a reference to the serialized params field.
