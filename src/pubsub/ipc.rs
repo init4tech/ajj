@@ -98,7 +98,8 @@ const CAPACITY: usize = 4096;
 /// A stream of JSON-RPC items, read from an [`AsyncRead`] stream.
 #[derive(Debug)]
 #[pin_project::pin_project]
-pub(crate) struct ReadJsonStream<T, Item> {
+#[doc(hidden)]
+pub struct ReadJsonStream<T, Item> {
     /// The underlying reader.
     #[pin]
     reader: T,

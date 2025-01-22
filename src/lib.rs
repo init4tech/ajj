@@ -139,6 +139,9 @@ pub use primitives::{BorrowedRpcObject, MethodId, RpcBorrow, RpcObject, RpcRecv,
 
 #[cfg(feature = "pubsub")]
 pub mod pubsub;
+#[doc(hidden)] // for tests
+#[cfg(feature = "ipc")]
+pub use pubsub::ReadJsonStream;
 
 mod routes;
 pub(crate) use routes::{BoxedIntoRoute, ErasedIntoRoute, Method, Route};

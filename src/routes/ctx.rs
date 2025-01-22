@@ -68,8 +68,7 @@ impl HandlerCtx {
     /// Notify a client of an event.
     pub async fn notify<T: RpcSend>(&self, t: &T) -> Result<(), NotifyError> {
         if let Some(notifications) = self.notifications.as_ref() {
-            let ser = serde_json::to_string(t)?;
-            let rv = serde_json::value::to_raw_value(&ser)?;
+            let rv = serde_json::value::to_raw_value(t)?;
             notifications.send(rv).await?;
         }
 
