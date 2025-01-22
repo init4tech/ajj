@@ -202,9 +202,12 @@ where
                         break;
                     };
 
-                    let Ok(req) = Request::try_from(item) else {
-                        tracing::warn!("inbound request is malformatted");
-                        continue
+                    let req = match Request::try_from(item) {
+                        Ok(req) => req,
+                        Err(err) => {
+                            tracing::warn!(%err, "inbound request is malformatted");
+                            continue
+                        }
                     };
 
                     let span = debug_span!("ipc request handling", id = req.id(), method = req.method());

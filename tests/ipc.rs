@@ -64,24 +64,17 @@ impl IpcClient {
     async fn recv_inner(&mut self) -> serde_json::Value {
         self.recv_half.next().await.unwrap()
     }
+}
 
+impl TestClient for IpcClient {
     fn next_id(&mut self) -> usize {
         let id = self.id;
         self.id += 1;
         id
     }
-}
 
-impl TestClient for IpcClient {
-    async fn send<S: serde::Serialize>(&mut self, method: &str, params: &S) {
-        let id = self.next_id();
-        self.send_inner(&serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": method,
-            "params": params,
-        }))
-        .await;
+    async fn send_raw<S: serde::Serialize>(&mut self, msg: &S) {
+        self.send_inner(msg).await;
     }
 
     async fn recv<D: serde::de::DeserializeOwned>(&mut self) -> D {
