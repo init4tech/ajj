@@ -48,6 +48,17 @@ pub trait TestClient {
     }
 }
 
+/// basic tests of the test router
+pub async fn basic_tests<T: TestClient>(mut client: T) {
+    test_ping(&mut client).await;
+
+    test_double(&mut client).await;
+
+    test_notify(&mut client).await;
+
+    test_missing_id(&mut client).await;
+}
+
 async fn test_missing_id<T: TestClient>(client: &mut T) {
     client
         .send_raw(&serde_json::json!(
@@ -66,23 +77,7 @@ async fn test_missing_id<T: TestClient>(client: &mut T) {
     );
 }
 
-/// basic tests of the test router
-pub async fn basic_tests<T: TestClient>(mut client: T) {
-    client.send("ping", &()).await;
-
-    let next: Value = client.recv().await;
-    assert_eq!(
-        next,
-        serde_json::json!({"id": client.last_id(), "jsonrpc": "2.0", "result": "pong"})
-    );
-
-    client.send("double", &5).await;
-    let next: Value = client.recv().await;
-    assert_eq!(
-        next,
-        serde_json::json!({"id": client.last_id(), "jsonrpc": "2.0", "result": 10})
-    );
-
+async fn test_notify<T: TestClient>(client: &mut T) {
     client.send("notify", &()).await;
 
     let now = std::time::Instant::now();
@@ -99,6 +94,23 @@ pub async fn basic_tests<T: TestClient>(mut client: T) {
         next,
         serde_json::json!({"method": "notify", "result": "notified"})
     );
+}
 
-    test_missing_id(&mut client).await;
+async fn test_double<T: TestClient>(client: &mut T) {
+    client.send("double", &5).await;
+    let next: Value = client.recv().await;
+    assert_eq!(
+        next,
+        serde_json::json!({"id": client.last_id(), "jsonrpc": "2.0", "result": 10})
+    );
+}
+
+async fn test_ping<T: TestClient>(client: &mut T) {
+    client.send("ping", &()).await;
+
+    let next: Value = client.recv().await;
+    assert_eq!(
+        next,
+        serde_json::json!({"id": client.last_id(), "jsonrpc": "2.0", "result": "pong"})
+    );
 }
