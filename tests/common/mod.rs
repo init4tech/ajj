@@ -30,13 +30,11 @@ pub fn test_router() -> ajj::Router<()> {
 pub trait TestClient {
     fn next_id(&mut self) -> usize;
 
-    fn last_id(&self) -> usize;
-
     async fn send_raw<S: serde::Serialize>(&mut self, msg: &S);
 
     async fn recv<D: serde::de::DeserializeOwned>(&mut self) -> D;
 
-    async fn send<S: serde::Serialize>(&mut self, method: &str, params: &S) {
+    async fn send<S: serde::Serialize>(&mut self, method: &str, params: &S) -> usize {
         let id = self.next_id();
         self.send_raw(&serde_json::json!({
             "jsonrpc": "2.0",
@@ -45,6 +43,7 @@ pub trait TestClient {
             "params": params,
         }))
         .await;
+        id
     }
 }
 
@@ -78,14 +77,14 @@ async fn test_missing_id<T: TestClient>(client: &mut T) {
 }
 
 async fn test_notify<T: TestClient>(client: &mut T) {
-    client.send("notify", &()).await;
+    let id = client.send("notify", &()).await;
 
     let now = std::time::Instant::now();
 
     let next: Value = client.recv().await;
     assert_eq!(
         next,
-        serde_json::json!({"id": client.last_id(), "jsonrpc": "2.0", "result": null})
+        serde_json::json!({"id": id, "jsonrpc": "2.0", "result": null})
     );
 
     let next: Value = client.recv().await;
@@ -97,20 +96,20 @@ async fn test_notify<T: TestClient>(client: &mut T) {
 }
 
 async fn test_double<T: TestClient>(client: &mut T) {
-    client.send("double", &5).await;
+    let id = client.send("double", &5).await;
     let next: Value = client.recv().await;
     assert_eq!(
         next,
-        serde_json::json!({"id": client.last_id(), "jsonrpc": "2.0", "result": 10})
+        serde_json::json!({"id": id, "jsonrpc": "2.0", "result": 10})
     );
 }
 
 async fn test_ping<T: TestClient>(client: &mut T) {
-    client.send("ping", &()).await;
+    let id = client.send("ping", &()).await;
 
     let next: Value = client.recv().await;
     assert_eq!(
         next,
-        serde_json::json!({"id": client.last_id(), "jsonrpc": "2.0", "result": "pong"})
+        serde_json::json!({"id": id, "jsonrpc": "2.0", "result": "pong"})
     );
 }

@@ -73,10 +73,6 @@ impl TestClient for IpcClient {
         id
     }
 
-    fn last_id(&self) -> usize {
-        self.id - 1
-    }
-
     async fn send_raw<S: serde::Serialize>(&mut self, msg: &S) {
         self.send_inner(msg).await;
     }
