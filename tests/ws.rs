@@ -47,7 +47,7 @@ impl TestClient for WsClient {
     }
 
     fn last_id(&self) -> usize {
-        self.id as usize - 1
+        self.id - 1
     }
 
     async fn send_raw<S: serde::Serialize>(&mut self, msg: &S) {
