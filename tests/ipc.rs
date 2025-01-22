@@ -12,7 +12,6 @@ use interprocess::local_socket::{
 use serde_json::Value;
 use tempfile::{NamedTempFile, TempPath};
 use tokio::io::AsyncWriteExt;
-use tracing::Level;
 
 pub(crate) fn to_name(path: &std::ffi::OsStr) -> std::io::Result<ls::Name<'_>> {
     if cfg!(windows) && !path.as_encoded_bytes().starts_with(br"\\.\pipe\") {
