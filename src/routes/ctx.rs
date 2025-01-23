@@ -2,7 +2,7 @@ use serde_json::value::RawValue;
 use tokio::sync::mpsc;
 use tracing::error;
 
-use crate::RpcSend;
+use crate::{types::Request, RpcSend};
 
 /// Errors that can occur when sending notifications.
 #[derive(thiserror::Error, Debug)]
@@ -82,5 +82,5 @@ pub struct HandlerArgs {
     /// The handler context.
     pub ctx: HandlerCtx,
     /// The JSON-RPC request.
-    pub req: crate::types::Request,
+    pub req: Request,
 }
