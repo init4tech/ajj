@@ -177,7 +177,7 @@ impl std::future::Future for BatchFuture {
     ) -> std::task::Poll<Self::Output> {
         if matches!(self.futs, BatchFutureInner::Prepping(_)) {
             // SPEC: empty arrays are invalid
-            if self.futs.is_empty() {
+            if self.futs.is_empty() && self.resps.is_empty() {
                 return Poll::Ready(Some(Response::parse_error()));
             }
             self.futs.run();
