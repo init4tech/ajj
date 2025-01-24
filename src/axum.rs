@@ -1,4 +1,7 @@
-use crate::{types::Response, HandlerArgs};
+use crate::{
+    types::{Request, Response},
+    HandlerArgs,
+};
 use axum::{extract::FromRequest, response::IntoResponse};
 use bytes::Bytes;
 use std::{future::Future, pin::Pin};
@@ -15,7 +18,7 @@ where
                 return Box::<str>::from(Response::parse_error()).into_response();
             };
 
-            let Ok(req) = crate::types::Request::try_from(bytes) else {
+            let Ok(req) = Request::try_from(bytes) else {
                 return Box::<str>::from(Response::parse_error()).into_response();
             };
 
