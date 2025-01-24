@@ -207,7 +207,7 @@ impl std::future::Future for BatchFuture {
                     // SPEC: single requests return a single response
                     // Batch requests return an array of responses
                     let resp = if *this.single {
-                        this.resps.pop().unwrap_or_else(|| Response::parse_error())
+                        this.resps.pop().unwrap_or_else(Response::parse_error)
                     } else {
                         // otherwise, we have an array of responses
                         serde_json::value::to_raw_value(&this.resps)

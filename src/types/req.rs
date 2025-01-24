@@ -139,7 +139,7 @@ impl Request {
     }
 
     /// True if the request is a notification, false otherwise.
-    pub fn is_notification(&self) -> bool {
+    pub const fn is_notification(&self) -> bool {
         self.id.is_none()
     }
 

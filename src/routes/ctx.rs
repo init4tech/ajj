@@ -86,17 +86,17 @@ pub struct HandlerArgs {
 
 impl HandlerArgs {
     /// Create new handler arguments.
-    pub fn new(ctx: HandlerCtx, req: Request) -> Self {
+    pub const fn new(ctx: HandlerCtx, req: Request) -> Self {
         Self { ctx, req }
     }
 
     /// Get a reference to the handler context.
-    pub fn ctx(&self) -> &HandlerCtx {
+    pub const fn ctx(&self) -> &HandlerCtx {
         &self.ctx
     }
 
     /// Get a reference to the JSON-RPC request.
-    pub fn req(&self) -> &Request {
+    pub const fn req(&self) -> &Request {
         &self.req
     }
 }

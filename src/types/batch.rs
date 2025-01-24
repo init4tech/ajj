@@ -35,7 +35,7 @@ impl InboundData {
     }
 
     /// Returns true if the batch was a single request, i.e. not an array.
-    pub fn single(&self) -> bool {
+    pub const fn single(&self) -> bool {
         self.single
     }
 }
@@ -55,7 +55,7 @@ impl TryFrom<Bytes> for InboundData {
     fn try_from(bytes: Bytes) -> Result<Self, Self::Error> {
         // Special-case a single request, rejecting invalid JSON.
         if bytes.starts_with(b"{") {
-            let rv: &RawValue = serde_json::from_slice(&bytes.as_ref())?;
+            let rv: &RawValue = serde_json::from_slice(bytes.as_ref())?;
 
             let range = find_range!(bytes, rv.get());
 

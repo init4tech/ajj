@@ -38,7 +38,7 @@ impl Response<'_, '_, (), ()> {
     /// deserialize into the expected type. This function exists to simplify
     /// notification responses, which should be omitted.
     pub(crate) fn maybe_invalid_params(id: Option<&RawValue>) -> Option<Box<RawValue>> {
-        id.map(|id| Self::invalid_params(id))
+        id.map(Self::invalid_params)
     }
 
     /// Method not found response, used in default fallback handler.
@@ -54,7 +54,7 @@ impl Response<'_, '_, (), ()> {
     /// function exists to simplify notification responses, which should be
     /// omitted.
     pub(crate) fn maybe_method_not_found(id: Option<&RawValue>) -> Option<Box<RawValue>> {
-        id.map(|id| Self::method_not_found(id))
+        id.map(Self::method_not_found)
     }
 
     /// Response failed to serialize
