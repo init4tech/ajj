@@ -3,7 +3,6 @@ use common::{test_router, TestClient};
 
 use ajj::pubsub::{Connect, ServerShutdown};
 use futures_util::{SinkExt, StreamExt};
-use serial_test::serial;
 use std::net::{Ipv4Addr, SocketAddr};
 use tokio_tungstenite::{
     tungstenite::{client::IntoClientRequest, Message},
@@ -64,7 +63,6 @@ async fn ws_client() -> WsClient {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_ws() {
     let _server = serve_ws().await;
     let mut client = ws_client().await;
