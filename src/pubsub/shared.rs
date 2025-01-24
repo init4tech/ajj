@@ -192,12 +192,12 @@ where
             select! {
                 biased;
                 _ = write_task.closed() => {
-                    debug!("IpcWriteTask has gone away");
+                    debug!("WriteTask has gone away");
                     break;
                 }
                 item = requests.next() => {
                     let Some(item) = item else {
-                        trace!("IPC read stream has closed");
+                        trace!("inbound read stream has closed");
                         break;
                     };
 
@@ -206,7 +206,7 @@ where
                     // enforces the specification.
                     let reqs = InboundData::try_from(item).unwrap_or_default();
 
-                    let span = debug_span!("ipc request handling", reqs = reqs.len());
+                    let span = debug_span!("pubsub request handling", reqs = reqs.len());
 
                     let ctx = write_task.clone().into();
 
