@@ -82,17 +82,10 @@ impl TestClient for IpcClient {
 }
 
 #[tokio::test]
-async fn basic_ipc() {
+async fn test_ipc() {
     let (_server, temp) = serve_ipc().await;
-    let client = IpcClient::new(&temp).await;
+    let mut client = IpcClient::new(&temp).await;
 
-    common::basic_tests(client).await;
-}
-
-#[tokio::test]
-async fn batch_ipc() {
-    let (_server, temp) = serve_ipc().await;
-    let client = IpcClient::new(&temp).await;
-
-    common::batch_tests(client).await;
+    common::basic_tests(&mut client).await;
+    common::batch_tests(&mut client).await;
 }
