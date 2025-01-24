@@ -4,6 +4,7 @@ pub enum RequestError {
     /// Invalid UTF-8
     #[error("Invalid UTF-8: {0}")]
     InvalidUtf8(#[from] core::str::Utf8Error),
+
     /// Invalid JSON
     #[error("Invalid JSON: {0}")]
     InvalidJson(#[from] serde_json::Error),
@@ -28,4 +29,12 @@ pub enum RequestError {
     /// not doing that.
     #[error("Method is too large, limit of 80 bytes. Got: {0}")]
     MethodTooLarge(usize),
+
+    /// Attempted to access an invalid batch index.
+    #[error("Invalid batch index. Attempted to access index {idx}, but only {len} requests are present.")]
+    InvalidBatchIndex { idx: usize, len: usize },
+
+    /// Request is not a JSON object or array.
+    #[error("Request is not a JSON object or array.")]
+    UnexpectedJsonType,
 }

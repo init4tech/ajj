@@ -5,7 +5,7 @@ mod erased;
 pub(crate) use erased::{BoxedIntoRoute, ErasedIntoRoute, MakeErasedHandler};
 
 mod future;
-pub use future::RouteFuture;
+pub use future::{BatchFuture, RouteFuture};
 
 mod handler;
 pub use handler::Handler;
@@ -25,18 +25,20 @@ use crate::types::Response;
 
 /// A JSON-RPC handler for a specific method.
 ///
-/// A route is a [`BoxCloneSyncService`] that takes JSON parameters and returns
-/// a boxed [`RawValue`]. Routes SHOULD be infallible. I.e. any error
+/// A route is a [`BoxCloneSyncService`] that takes JSON parameters and may
+/// return a boxed [`RawValue`]. Routes SHOULD be infallible. I.e. any error
 /// that occurs during the handling of a request should be represented as a
 /// JSON-RPC error response, rather than having the service return an `Err`.
 #[derive(Debug)]
-pub(crate) struct Route(tower::util::BoxCloneSyncService<HandlerArgs, Box<RawValue>, Infallible>);
+pub(crate) struct Route(
+    tower::util::BoxCloneSyncService<HandlerArgs, Option<Box<RawValue>>, Infallible>,
+);
 
 impl Route {
     /// Create a new route from a service.
     pub(crate) fn new<S>(inner: S) -> Self
     where
-        S: Service<HandlerArgs, Response = Box<RawValue>, Error = Infallible>
+        S: Service<HandlerArgs, Response = Option<Box<RawValue>>, Error = Infallible>
             + Clone
             + Send
             + Sync
@@ -53,7 +55,7 @@ impl Route {
             let id = req.id_owned();
             drop(req);
 
-            Ok(Response::method_not_found(id))
+            Ok(Response::maybe_method_not_found(id.as_deref()))
         }))
     }
 
@@ -75,14 +77,14 @@ impl Clone for Route {
     }
 }
 
-impl From<BoxCloneSyncService<HandlerArgs, Box<RawValue>, Infallible>> for Route {
-    fn from(inner: BoxCloneSyncService<HandlerArgs, Box<RawValue>, Infallible>) -> Self {
+impl From<BoxCloneSyncService<HandlerArgs, Option<Box<RawValue>>, Infallible>> for Route {
+    fn from(inner: BoxCloneSyncService<HandlerArgs, Option<Box<RawValue>>, Infallible>) -> Self {
         Self(inner)
     }
 }
 
 impl Service<HandlerArgs> for Route {
-    type Response = Box<RawValue>;
+    type Response = Option<Box<RawValue>>;
 
     type Error = Infallible;
 

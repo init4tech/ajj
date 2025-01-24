@@ -144,8 +144,8 @@ pub mod pubsub;
 pub use pubsub::ReadJsonStream;
 
 mod routes;
+pub use routes::{BatchFuture, Handler, HandlerArgs, HandlerCtx, NotifyError, RouteFuture};
 pub(crate) use routes::{BoxedIntoRoute, ErasedIntoRoute, Method, Route};
-pub use routes::{Handler, HandlerArgs, HandlerCtx, NotifyError, RouteFuture};
 
 mod router;
 pub use router::Router;
@@ -208,7 +208,8 @@ mod test {
                 (),
             )
             .await
-            .expect("infallible");
+            .expect("infallible")
+            .expect("request had ID, is not a notification");
 
         assert_rv_eq(
             &res,
@@ -226,7 +227,8 @@ mod test {
                 (),
             )
             .await
-            .expect("infallible");
+            .expect("infallible")
+            .expect("request had ID, is not a notification");
 
         assert_rv_eq(&res2, r#"{"jsonrpc":"2.0","id":1,"result":"{}"}"#);
     }

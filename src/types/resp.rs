@@ -8,17 +8,17 @@ const INTERNAL_ERROR: Cow<'_, str> = Cow::Borrowed("Internal error");
 
 /// Response struct.
 #[derive(Debug, Clone)]
-pub(crate) struct Response<'a, T, E> {
-    pub(crate) id: Box<RawValue>,
+pub(crate) struct Response<'a, 'b, T, E> {
+    pub(crate) id: &'b RawValue,
     pub(crate) payload: &'a ResponsePayload<T, E>,
 }
 
-impl Response<'_, (), ()> {
+impl Response<'_, '_, (), ()> {
     /// Parse error response, used when the request is not valid JSON.
     #[allow(dead_code)] // used in features
     pub(crate) fn parse_error() -> Box<RawValue> {
         Response::<(), ()> {
-            id: Default::default(), // NULL
+            id: RawValue::NULL,
             payload: &ResponsePayload::parse_error(),
         }
         .to_json()
@@ -26,7 +26,7 @@ impl Response<'_, (), ()> {
 
     /// Invalid params response, used when the params field does not
     /// deserialize into the expected type.
-    pub(crate) fn invalid_params(id: Box<RawValue>) -> Box<RawValue> {
+    pub(crate) fn invalid_params(id: &RawValue) -> Box<RawValue> {
         Response::<(), ()> {
             id,
             payload: &ResponsePayload::invalid_params(),
@@ -34,13 +34,27 @@ impl Response<'_, (), ()> {
         .to_json()
     }
 
+    /// Invalid params response, used when the params field does not
+    /// deserialize into the expected type. This function exists to simplify
+    /// notification responses, which should be omitted.
+    pub(crate) fn maybe_invalid_params(id: Option<&RawValue>) -> Option<Box<RawValue>> {
+        id.map(|id| Self::invalid_params(id))
+    }
+
     /// Method not found response, used in default fallback handler.
-    pub(crate) fn method_not_found(id: Box<RawValue>) -> Box<RawValue> {
+    pub(crate) fn method_not_found(id: &RawValue) -> Box<RawValue> {
         Response::<(), ()> {
             id,
             payload: &ResponsePayload::method_not_found(),
         }
         .to_json()
+    }
+
+    /// Method not found response, used in default fallback handler. This
+    /// function exists to simplify notification responses, which should be
+    /// omitted.
+    pub(crate) fn maybe_method_not_found(id: Option<&RawValue>) -> Option<Box<RawValue>> {
+        id.map(|id| Self::method_not_found(id))
     }
 
     /// Response failed to serialize
@@ -53,20 +67,27 @@ impl Response<'_, (), ()> {
     }
 }
 
-impl<T, E> Response<'_, T, E>
+impl<'a, 'b, T, E> Response<'a, 'b, T, E>
 where
     T: Serialize,
     E: Serialize,
 {
+    pub(crate) fn maybe(
+        id: Option<&'b RawValue>,
+        payload: &'a ResponsePayload<T, E>,
+    ) -> Option<Box<RawValue>> {
+        id.map(|id| Self { id, payload }.to_json())
+    }
+
     pub(crate) fn to_json(&self) -> Box<RawValue> {
         serde_json::value::to_raw_value(self).unwrap_or_else(|err| {
-            tracing::debug!(%err, id = %self.id, "failed to serialize response");
-            Response::serialization_failure(&self.id)
+            tracing::debug!(%err, id = ?self.id, "failed to serialize response");
+            Response::serialization_failure(self.id)
         })
     }
 }
 
-impl<T, E> Serialize for Response<'_, T, E>
+impl<T, E> Serialize for Response<'_, '_, T, E>
 where
     T: Serialize,
     E: Serialize,
@@ -196,6 +217,7 @@ pub struct ErrorPayload<ErrData = Box<RawValue>> {
     /// The error message (if any).
     pub message: Cow<'static, str>,
     /// The error data (if any).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<ErrData>,
 }
 

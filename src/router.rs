@@ -1,9 +1,10 @@
 //! JSON-RPC router.
 
 use crate::{
-    routes::{MakeErasedHandler, RouteFuture},
-    BoxedIntoRoute, ErasedIntoRoute, Handler, HandlerArgs, Method, MethodId, RegistrationError,
-    Route,
+    routes::{BatchFuture, MakeErasedHandler, RouteFuture},
+    types::InboundData,
+    BoxedIntoRoute, ErasedIntoRoute, Handler, HandlerArgs, HandlerCtx, Method, MethodId,
+    RegistrationError, Route,
 };
 use core::fmt;
 use serde_json::value::RawValue;
@@ -193,7 +194,7 @@ where
     where
         T: Service<
                 HandlerArgs,
-                Response = Box<RawValue>,
+                Response = Option<Box<RawValue>>,
                 Error = Infallible,
                 Future: Send + 'static,
             > + Clone
@@ -299,13 +300,33 @@ where
     /// This is a convenience method, primarily for testing. Use in production
     /// code is discouraged. Routers should not be left in incomplete states.
     pub fn call_with_state(&self, args: HandlerArgs, state: S) -> RouteFuture {
-        let id = args.req.id_owned();
-        let method = args.req.method();
+        let id = args.req().id_owned();
+        let method = args.req().method();
 
-        let span = debug_span!("Router::call_with_state", %method, %id);
-        trace!(params = args.req.params());
+        let span = debug_span!("Router::call_with_state", %method, ?id);
+        trace!(params = args.req().params());
 
         self.inner.call_with_state(args, state).with_span(span)
+    }
+
+    /// Call a method on the router, without providing state.
+    pub fn call_batch_with_state(
+        &self,
+        ctx: HandlerCtx,
+        inbound: InboundData,
+        state: S,
+    ) -> BatchFuture {
+        let mut fut = BatchFuture::new_with_capacity(inbound.single(), inbound.len());
+        // According to spec, non-parsable requests should still receive a
+        // response.
+        for req in inbound.iter() {
+            let req = req.map(|req| {
+                let args = HandlerArgs::new(ctx.clone(), req);
+                self.call_with_state(args, state.clone())
+            });
+            fut.push_parse_result(req);
+        }
+        fut
     }
 
     /// Nest this router into a new Axum router, with the specified path.
@@ -316,21 +337,26 @@ where
 }
 
 impl Router<()> {
-    // /// Serve the router over a connection. This method returns a
-    // /// [`ServerShutdown`], which will shut down the server when dropped.
-    // ///
-    // /// [`ServerShutdown`]: crate::pubsub::ServerShutdown
-    // #[cfg(feature = "pubsub")]
-    // pub async fn serve_pubsub<C: crate::pubsub::Connect>(
-    //     self,
-    //     connect: C,
-    // ) -> Result<crate::pubsub::ServerShutdown, C::Error> {
-    //     connect.run(self).await
-    // }
+    /// Serve the router over a connection. This method returns a
+    /// [`ServerShutdown`], which will shut down the server when dropped.
+    ///
+    /// [`ServerShutdown`]: crate::pubsub::ServerShutdown
+    #[cfg(feature = "pubsub")]
+    pub async fn serve_pubsub<C: crate::pubsub::Connect>(
+        self,
+        connect: C,
+    ) -> Result<crate::pubsub::ServerShutdown, C::Error> {
+        connect.serve(self).await
+    }
 
     /// Call a method on the router.
     pub fn handle_request(&self, args: HandlerArgs) -> RouteFuture {
         self.call_with_state(args, ())
+    }
+
+    /// Call a batch of methods on the router.
+    pub fn handle_request_batch(&self, ctx: HandlerCtx, batch: InboundData) -> BatchFuture {
+        self.call_batch_with_state(ctx, batch, ())
     }
 }
 
@@ -341,7 +367,7 @@ impl<S> fmt::Debug for Router<S> {
 }
 
 impl tower::Service<HandlerArgs> for Router<()> {
-    type Response = Box<RawValue>;
+    type Response = Option<Box<RawValue>>;
     type Error = Infallible;
     type Future = RouteFuture;
 
@@ -355,7 +381,7 @@ impl tower::Service<HandlerArgs> for Router<()> {
 }
 
 impl tower::Service<HandlerArgs> for &Router<()> {
-    type Response = Box<RawValue>;
+    type Response = Option<Box<RawValue>>;
     type Error = Infallible;
     type Future = RouteFuture;
 
@@ -517,7 +543,7 @@ impl<S> RouterInner<S> {
     /// Call a method on the router, with the provided state.
     #[track_caller]
     pub(crate) fn call_with_state(&self, args: HandlerArgs, state: S) -> RouteFuture {
-        let method = args.req.method();
+        let method = args.req().method();
         self.method_by_name(method)
             .unwrap_or(&self.fallback)
             .call_with_state(args, state)

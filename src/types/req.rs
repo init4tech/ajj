@@ -3,19 +3,6 @@ use bytes::Bytes;
 use serde_json::value::RawValue;
 use std::ops::Range;
 
-macro_rules! find_range {
-    ($bytes:expr, $rv:expr) => {{
-        let rv = $rv.as_bytes();
-
-        let start = rv.as_ptr() as usize - $bytes.as_ptr() as usize;
-        let end = start + rv.len();
-
-        debug_assert_eq!(rv, &$bytes[start..end]);
-
-        start..end
-    }};
-}
-
 /// Utf8 payload, partially deserialized
 #[derive(Clone)]
 pub struct Request {
@@ -134,20 +121,26 @@ impl Request {
     /// have a null ID, as per [the JSON-RPC spec].
     ///
     /// [the JSON-RPC spec]: https://www.jsonrpc.org/specification#response_object
-    pub fn id(&self) -> &str {
-        self.id
-            .as_ref()
-            .map(|range| {
-                // SAFETY: `range` is guaranteed to be valid JSON, and a valid
-                // slice of `bytes`.
-                unsafe { core::str::from_utf8_unchecked(self.bytes.get_unchecked(range.clone())) }
-            })
-            .unwrap_or("null")
+    pub fn id(&self) -> Option<&str> {
+        self.id.as_ref().map(|range| {
+            // SAFETY: `range` is guaranteed to be valid JSON, and a valid
+            // slice of `bytes`.
+            unsafe { core::str::from_utf8_unchecked(self.bytes.get_unchecked(range.clone())) }
+        })
     }
 
     /// Return an owned version of the serialized ID field.
-    pub fn id_owned(&self) -> Box<RawValue> {
-        RawValue::from_string(self.id().to_string()).expect("valid json")
+    pub fn id_owned(&self) -> Option<Box<RawValue>> {
+        self.id()
+            .map(str::to_string)
+            .map(RawValue::from_string)
+            .transpose()
+            .expect("valid json")
+    }
+
+    /// True if the request is a notification, false otherwise.
+    pub fn is_notification(&self) -> bool {
+        self.id.is_none()
     }
 
     /// Return a reference to the method str, deserialized.
@@ -205,7 +198,7 @@ mod test {
         let bytes = Bytes::from_static(b"{\"id\":1,\"method\":\"foo\",\"params\":[]}");
         let req = Request::try_from(bytes).unwrap();
 
-        assert_eq!(req.id(), "1");
+        assert_eq!(req.id(), Some("1"));
         assert_eq!(req.method(), r#"foo"#);
         assert_eq!(req.params(), r#"[]"#);
     }
