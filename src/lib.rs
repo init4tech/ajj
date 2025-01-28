@@ -10,16 +10,17 @@
 //! register JSON-RPC methods and their handlers.
 //!
 //! ```no_run
-//! use ajj::{Router, HandlerCtx, ResponsePayload, Params};
+//! use ajj::{Router, HandlerCtx, ResponsePayload};
 //!
-//! # fn main() {
+//! # fn test_fn() -> Router<()> {
 //! // Provide methods called "double" and "add" to the router.
 //! let router = Router::<u64>::new()
-//!   .route("double", |Params(params): Params<u64>| async move {
-//!     Ok::<_, ()>(params * 2)
-//!   })
 //!   .route("add", |params: u64, state: u64| async move {
 //!     Ok::<_, ()>(params + state)
+//!   })
+//!   .with_state(3u64)
+//!   .route("double", |params: u64| async move {
+//!     Ok::<_, ()>(params * 2)
 //!   })
 //!   // Routes get a ctx, which can be used to send notifications.
 //!   .route("notify", |ctx: HandlerCtx| async move {
@@ -43,9 +44,8 @@
 //!   .route("error_example", || async {
 //!     // This will appear in the ResponsePayload's `message` field.
 //!     ResponsePayload::<(), ()>::internal_error_message("this is an error".into())
-//!   })
-//!   // The router is provided with state, and is now ready to serve requests.
-//!   .with_state::<()>(3u64);
+//!   });
+//! # router
 //! # }
 //! ```
 //!

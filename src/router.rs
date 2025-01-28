@@ -33,27 +33,24 @@ use tracing::{debug_span, trace};
 /// The `double` method doubles the provided number, and the `add` method adds
 /// the provided number to some state, and returns the sum.
 ///
-/// These methods can
-///
 /// ```
-/// use ajj::{Router, Params};
+/// use ajj::Router;
 ///
 /// # fn main() {
 /// // Provide methods called "double" and "add" to the router.
 /// let router = Router::<u64>::new()
-///   // when double is called, the provided number is doubled.
-///   // see the Handler docs for more information on the hint type
-///   .route("double", |Params(params): Params<u64>| async move {
-///     Ok::<_, ()>(params * 2)
-///   })
+///    // This route requires state to be provided.
 ///   .route("add", |params: u64, state: u64| async move {
 ///     Ok::<_, ()>(params + state)
 ///   })
-///   // The router is provided with state, and is now ready to serve requests.
-///   .with_state::<()>(3u64);
+///   .with_state::<()>(3u64)
+///   // when double is called, the provided number is doubled.
+///   // see the Handler docs for more information on the hint type
+///   .route("double", |params: u64| async move {
+///     Ok::<_, ()>(params * 2)
+///   });
 /// # }
 /// ```
-///
 ///
 /// ## Note
 ///

@@ -65,29 +65,82 @@ pub struct PhantomParams<T>(PhantomData<T>);
 ///   [`RpcRecv`]).
 /// 3. The argument to the handler matches the `S` type of the router.
 ///
-/// In these cases the compiler will find multiple valid impls of the `Handler`
-/// trait. In order to differentiate these impls, you can use the [`State`]
-/// wrapper struct to indicate that the argument is `state`, or the [`Params`]
-/// wrapper struct to indicate that the argument is `params`.
-///
 /// ```compile_fail
-/// use ajj::{Router, Params, State};
+/// use ajj::Router;
 ///
 /// async fn ok() -> Result<(), ()> { Ok(()) }
 ///
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// Router::new::<u8>()
-///     // this will fail to infer the `Handler` impl as the argument could be
-///     // either `params` or `state`
-///     // The error will look like this:
-///     // cannot infer type for type parameter `T` declared on the method `route`
-///     .route("foo", |something: u8| ok())
-///     // this will succeed as the `State` wrapper indicates that the argument
-///     // is `state`
-///     .route("bar", |State(something): State<u8>| ok())
-///     // this will succeed as the `Params` wrapper indicates that the argument
-///     // is `params`
-///     .route("baz", |Params(something): Params<u8>| ok());
+/// # fn test_fn() -> Router<()> {
+/// // These will fail to infer the `Handler` impl as the argument could be
+/// // either `params` or `state`.
+/// //
+/// // The error will look like this:
+/// // cannot infer type for type parameter `T` declared on the method
+/// // `route`
+/// Router::<u8>::new()
+///     // "foo" and "bar" are ambiguous, as the `S` type is `u8`
+///     .route("foo", |params: u8| ok())
+///     .route("bar", |state: u8| ok())
+///     // "baz" is unambiguous, as it has both `params` and `state` arguments
+///     .route("baz", |params: u8, state: u8| ok())
+///     .with_state(3u8)
+/// # }
+/// ```
+///
+/// In these cases the compiler will find multiple valid impls of the `Handler`
+/// trait.
+///
+/// The easiest way to resolve this is to avoid using the `S` type of the
+/// router as the `params` argument to the handler. This will ensure that the
+/// compiler can always infer the correct impl of the `Handler` trait. In cases
+/// where `Params` and `S` must be the same type, you can use the [`Params`] and
+/// [`State`] wrapper structs in your handler arguments to disambiguate the
+/// argument type.
+///
+/// The usual way to fix this is to reorganize route invocations to avoid the
+/// ambiguity:
+///
+/// ```
+/// # use ajj::{Router, Params, State};
+/// # async fn ok() -> Result<(), ()> { Ok(()) }
+/// # fn test_fn() -> Router<()> {
+/// // When "foo" is routed, the argument is unambiguous, as the `S` type
+/// // is no longer `u8`.
+/// Router::<u8>::new()
+///     // This was already unambiguous, as having both `params` and `state` is
+///     // never ambiguous
+///     .route("baz", |params: u8, state: u8| ok())
+///     .with_state::<()>(3u8)
+///
+///     // "bar" presents a problem. We'll come back to this in the next
+///     // example.
+///     // .route("bar", |state: u8| ok())
+///
+///     // `S` is now `()`, so the argument is unambiguous.
+///     .route("foo", |params: u8| ok())
+/// # }
+/// ```
+///
+/// However this still leaves the problem of "bar". There is no way to express
+/// "bar" unambiguously by reordering method invocations. In this case, you can
+/// use the [`Params`] and [`State`] wrapper structs to disambiguate the
+/// argument type.
+///
+/// ```
+/// # use ajj::{Router, Params, State};
+/// # async fn ok() -> Result<(), ()> { Ok(()) }
+/// # fn test_fn() -> Router<()> {
+/// Router::<u8>::new()
+///     // This is now unambiguous, as the `Params` wrapper indicates that the
+///     // argument is `params`
+///     .route("foo", |Params(params): Params<u8>| ok())
+///     // This is now umabiguous, as the `State` wrapper indicates that the
+///     // argument is `state`
+///     .route("bar", |State(state): State<u8>| ok())
+///     // This was already unambiguous, as having both `params` and `state` is
+///     // never ambiguous
+///     .route("baz", |params: u8, state: u8| ok())
+///     .with_state::<()>(3u8)
 /// # }
 /// ```
 ///
