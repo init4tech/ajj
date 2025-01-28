@@ -36,12 +36,14 @@ use tracing::{debug_span, trace};
 /// These methods can
 ///
 /// ```
-/// use ajj::{Router};
+/// use ajj::{Router, Params};
 ///
 /// # fn main() {
 /// // Provide methods called "double" and "add" to the router.
 /// let router = Router::<u64>::new()
-///   .route("double", |params: u64| async move {
+///   // when double is called, the provided number is doubled.
+///   // see the Handler docs for more information on the hint type
+///   .route("double", |Params(params): Params<u64>| async move {
 ///     Ok::<_, ()>(params * 2)
 ///   })
 ///   .route("add", |params: u64, state: u64| async move {

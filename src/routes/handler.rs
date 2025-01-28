@@ -17,13 +17,13 @@ macro_rules! convert_result {
 /// trait "Handler argument type inference" section for more information.
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct State<S>(S);
+pub struct State<S>(pub S);
 
 /// Hint type for differentiating certain handler impls. See the [`Handler`]
 /// trait "Handler argument type inference" section for more information.
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Params<T>(T);
+pub struct Params<T>(pub T);
 
 /// Marker type used for differentiating certain handler impls.
 #[allow(missing_debug_implementations, unreachable_pub)]
@@ -59,7 +59,7 @@ pub struct PhantomParams<T>(PhantomData<T>);
 /// When the following conditions are true, the compiler may fail to infer
 /// whether a handler argument is `params` or `state`:
 ///
-/// 1. The handler takes EITHER `params` or `state`
+/// 1. The handler takes EITHER `params` or `state`.
 /// 2. The `S` type of the router is a valid `params` type (i.e. it impls
 ///   [`serde::de::DeserializeOwned`] and satisfies the other requirements of
 ///   [`RpcRecv`]).
@@ -70,16 +70,17 @@ pub struct PhantomParams<T>(PhantomData<T>);
 /// wrapper struct to indicate that the argument is `state`, or the [`Params`]
 /// wrapper struct to indicate that the argument is `params`.
 ///
-/// ```no_run
+/// ```compile_fail
 /// use ajj::{Router, Params, State};
 ///
 /// async fn ok() -> Result<(), ()> { Ok(()) }
 ///
-/// # #[tokio::main]
-/// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// Router::new::<u8>()
 ///     // this will fail to infer the `Handler` impl as the argument could be
 ///     // either `params` or `state`
+///     // The error will look like this:
+///     // cannot infer type for type parameter `T` declared on the method `route`
 ///     .route("foo", |something: u8| ok())
 ///     // this will succeed as the `State` wrapper indicates that the argument
 ///     // is `state`
@@ -939,7 +940,7 @@ mod test {
     fn combination_inference() {
         let router: crate::Router<()> = crate::Router::<NewType>::new()
             //responses
-            .route("respnse", || ok())
+            .route("respnse", ok)
             .route("respnse, ctx", |_: HandlerCtx| resp_ok())
             .route("respnse, params", |_: u16| resp_ok())
             .route("respnse, ctx, params", |_: HandlerCtx, _: u16| resp_ok())
@@ -950,7 +951,7 @@ mod test {
                 |_: HandlerCtx, _: u8, _: NewType| resp_ok(),
             )
             // results
-            .route("result", || ok())
+            .route("result", ok)
             .route("result, ctx", |_: HandlerCtx| ok())
             .route("result, params", |_: u16| ok())
             .route("result, ctx, params", |_: HandlerCtx, _: u16| ok())

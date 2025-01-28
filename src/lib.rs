@@ -10,12 +10,12 @@
 //! register JSON-RPC methods and their handlers.
 //!
 //! ```no_run
-//! use ajj::{Router, HandlerCtx, ResponsePayload};
+//! use ajj::{Router, HandlerCtx, ResponsePayload, Params};
 //!
 //! # fn main() {
 //! // Provide methods called "double" and "add" to the router.
 //! let router = Router::<u64>::new()
-//!   .route("double", |params: u64| async move {
+//!   .route("double", |Params(params): Params<u64>| async move {
 //!     Ok::<_, ()>(params * 2)
 //!   })
 //!   .route("add", |params: u64, state: u64| async move {
