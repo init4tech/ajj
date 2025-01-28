@@ -134,9 +134,11 @@ pub struct PhantomParams<T>(PhantomData<T>);
 ///     // This is now unambiguous, as the `Params` wrapper indicates that the
 ///     // argument is `params`
 ///     .route("foo", |Params(params): Params<u8>| ok())
+///
 ///     // This is now umabiguous, as the `State` wrapper indicates that the
 ///     // argument is `state`
 ///     .route("bar", |State(state): State<u8>| ok())
+///
 ///     // This was already unambiguous, as having both `params` and `state` is
 ///     // never ambiguous
 ///     .route("baz", |params: u8, state: u8| ok())
