@@ -60,9 +60,9 @@ pub struct PhantomParams<T>(PhantomData<T>);
 /// whether a handler argument is `params` or `state`:
 ///
 /// 1. The handler takes EITHER `params` or `state`.
-/// 2. The `S` type of the router is a valid `params` type (i.e. it impls
-///   [`serde::de::DeserializeOwned`] and satisfies the other requirements of
-///   [`RpcRecv`]).
+/// 2. The `S` type of the router would also be a valid `Params` type (i.e. it
+///   impls [`DeserializeOwned`] and satisfies the other
+///   requirements of [`RpcRecv`]).
 /// 3. The argument to the handler matches the `S` type of the router.
 ///
 /// ```compile_fail
@@ -110,11 +110,12 @@ pub struct PhantomParams<T>(PhantomData<T>);
 ///     // This was already unambiguous, as having both `params` and `state` is
 ///     // never ambiguous
 ///     .route("baz", |params: u8, state: u8| ok())
-///     .with_state::<()>(3u8)
 ///
 ///     // "bar" presents a problem. We'll come back to this in the next
 ///     // example.
 ///     // .route("bar", |state: u8| ok())
+///
+///     .with_state::<()>(3u8)
 ///
 ///     // `S` is now `()`, so the argument is unambiguous.
 ///     .route("foo", |params: u8| ok())
@@ -280,6 +281,8 @@ pub struct PhantomParams<T>(PhantomData<T>);
 ///   }
 /// }
 /// ```
+///
+/// [`DeserializeOwned`]: serde::de::DeserializeOwned
 #[cfg_attr(feature = "pubsub", doc = " [`Listener`]: crate::pubsub::Listener")]
 pub trait Handler<T, S>: Clone + Send + Sync + Sized + 'static {
     /// The future returned by the handler.
