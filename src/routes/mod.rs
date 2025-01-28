@@ -8,8 +8,8 @@ mod future;
 pub use future::{BatchFuture, RouteFuture};
 
 mod handler;
-pub use handler::Handler;
 pub(crate) use handler::HandlerInternal;
+pub use handler::{Handler, Params, State};
 
 mod method;
 pub(crate) use method::Method;
