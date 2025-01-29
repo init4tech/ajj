@@ -2,7 +2,7 @@ use std::future::Future;
 
 use crate::{types::Request, RpcSend, TaskSet};
 use serde_json::value::RawValue;
-use tokio::{runtime::Handle, sync::mpsc};
+use tokio::{runtime::Handle, sync::mpsc, task::JoinHandle};
 use tracing::error;
 
 /// Errors that can occur when sending notifications.
@@ -17,11 +17,14 @@ pub enum NotifyError {
 }
 
 /// A context for handler requests that allow the handler to send notifications
-/// from long-running tasks (e.g. subscriptions).
+/// and spawn long-running tasks (e.g. subscriptions).
 ///
-/// This is primarily intended to enable subscriptions over pubsub transports
-/// to send notifications to clients. It is expected that JSON sent via the
-/// notification channel is a valid JSON-RPC 2.0 object.
+/// The handler is used for two things:
+/// - Spawning long-running tasks (e.g. subscriptions) via
+///   [`HandlerCtx::spawn`] or [`HandlerCtx::spawn_blocking`].
+/// - Sending notifications to pubsub clients via [`HandlerCtx::notify`].
+///   Notifcations SHOULD be valid JSON-RPC objects, but this is
+///   not enforced by the type system.
 #[derive(Debug, Clone, Default)]
 pub struct HandlerCtx {
     pub(crate) notifications: Option<mpsc::Sender<Box<RawValue>>>,
@@ -50,19 +53,13 @@ impl From<Handle> for HandlerCtx {
 
 impl HandlerCtx {
     /// Create a new handler context.
-    pub fn new(notifications: Option<mpsc::Sender<Box<RawValue>>>, tasks: TaskSet) -> Self {
+    pub(crate) const fn new(
+        notifications: Option<mpsc::Sender<Box<RawValue>>>,
+        tasks: TaskSet,
+    ) -> Self {
         Self {
             notifications,
             tasks,
-        }
-    }
-
-    /// Instantiation a new handler context with notifications enabled and a
-    /// default [`TaskSet`].
-    pub fn notifications_only(notifications: mpsc::Sender<Box<RawValue>>) -> Self {
-        Self {
-            notifications: Some(notifications),
-            tasks: Default::default(),
         }
     }
 
@@ -93,20 +90,42 @@ impl HandlerCtx {
     }
 
     /// Spawn a task on the task set.
-    pub fn spawn<F>(&self, f: F)
-    where
-        F: Future<Output = ()> + Send + 'static,
-    {
-        self.tasks.spawn(f);
-    }
-
-    /// Spawn a task on the task set that may block.
-    pub fn spawn_blocking<F, R>(&self, f: F)
+    pub fn spawn<F>(&self, f: F) -> JoinHandle<Option<F::Output>>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        self.tasks.spawn_blocking(f);
+        self.tasks.spawn(f)
+    }
+
+    /// Spawn a task on the task set with access to this context.
+    pub fn spawn_with_ctx<F, Fut>(&self, f: F) -> JoinHandle<Option<Fut::Output>>
+    where
+        F: FnOnce(HandlerCtx) -> Fut,
+        Fut: Future + Send + 'static,
+        Fut::Output: Send + 'static,
+    {
+        self.tasks.spawn(f(self.clone()))
+    }
+
+    /// Spawn a task that may block on the task set.
+    pub fn spawn_blocking<F, R>(&self, f: F) -> JoinHandle<Option<F::Output>>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        self.tasks.spawn_blocking(f)
+    }
+
+    /// Spawn a task that may block on the task set, with access to this
+    /// context.
+    pub fn spawn_blocking_with_ctx<F, Fut>(&self, f: F) -> JoinHandle<Option<Fut::Output>>
+    where
+        F: FnOnce(HandlerCtx) -> Fut,
+        Fut: Future + Send + 'static,
+        Fut::Output: Send + 'static,
+    {
+        self.tasks.spawn_blocking(f(self.clone()))
     }
 }
 

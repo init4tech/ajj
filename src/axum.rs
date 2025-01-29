@@ -7,9 +7,15 @@ use bytes::Bytes;
 use std::{future::Future, pin::Pin};
 use tokio::runtime::Handle;
 
-/// A wrapper around an [`ajj::Router`] that implements the [`axum::handler::Handler`] trait.
+/// A wrapper around an [`Router`] that implements the
+/// [`axum::handler::Handler`] trait. This struct is an implementation detail
+/// of the [`Router::into_axum`] and [`Router::into_axum_with_handle`] methods.
+///
+/// [`Router`]: crate::Router
+/// [`Router::into_axum`]: crate::Router::into_axum
+/// [`Router::into_axum_with_handle`]: crate::Router::into_axum_with_handle
 #[derive(Debug, Clone)]
-pub struct IntoAxum<S> {
+pub(crate) struct IntoAxum<S> {
     pub(crate) router: crate::Router<S>,
     pub(crate) task_set: TaskSet,
 }

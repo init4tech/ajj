@@ -2,15 +2,18 @@ use std::future::Future;
 
 use tokio::{runtime::Handle, task::JoinHandle};
 use tokio_util::{
-    sync::{CancellationToken, WaitForCancellationFuture, WaitForCancellationFutureOwned},
-    task::{task_tracker::TaskTrackerWaitFuture, TaskTracker},
+    sync::{CancellationToken, WaitForCancellationFuture},
+    task::TaskTracker,
 };
 
-/// This is a wrapper around a [`TaskTracker`] and a [`token`]. It is used to
-/// manage a set of tasks, and to token them to shut down when the set is
-/// dropped.
+/// This is a wrapper around a [`TaskTracker`] and a [`CancellationToken`]. It
+/// is used to manage a set of tasks, and to token them to shut down when the
+/// set is dropped.
+///
+/// When a [`Handle`] is provided, tasks are spawned on that handle. Otherwise,
+/// they are spawned on the current runtime.
 #[derive(Debug, Clone, Default)]
-pub struct TaskSet {
+pub(crate) struct TaskSet {
     tasks: TaskTracker,
     token: CancellationToken,
     handle: Option<Handle>,
@@ -23,17 +26,8 @@ impl From<Handle> for TaskSet {
 }
 
 impl TaskSet {
-    /// Create a new [`TaskSet`].
-    pub fn new() -> Self {
-        Self {
-            tasks: TaskTracker::new(),
-            token: CancellationToken::new(),
-            handle: None,
-        }
-    }
-
     /// Create a new [`TaskSet`] with a handle.
-    pub fn with_handle(handle: Handle) -> Self {
+    pub(crate) fn with_handle(handle: Handle) -> Self {
         Self {
             tasks: TaskTracker::new(),
             token: CancellationToken::new(),
@@ -42,58 +36,29 @@ impl TaskSet {
     }
 
     /// Get a handle to the runtime that the task set is running on.
-    pub fn handle(&self) -> Handle {
+    ///
+    /// ## Panics
+    ///
+    /// This will panic if called outside the context of a Tokio runtime.
+    pub(crate) fn handle(&self) -> Handle {
         self.handle
             .clone()
             .unwrap_or_else(tokio::runtime::Handle::current)
     }
 
-    /// Close the task set, preventing new tasks from being added.
-    ///
-    /// See [`TaskTracker::close`]
-    pub fn close(&self) {
-        self.tasks.close();
-    }
-
-    /// Reopen the task set, allowing new tasks to be added.
-    ///
-    /// See [`TaskTracker::reopen`]
-    pub fn reopen(&self) {
-        self.tasks.reopen();
-    }
-
     /// Cancel the token, causing all tasks to be cancelled.
-    pub fn cancel(&self) {
+    pub(crate) fn cancel(&self) {
         self.token.cancel();
     }
 
     /// Get a future that resolves when the token is fired.
-    pub fn cancelled(&self) -> WaitForCancellationFuture<'_> {
+    pub(crate) fn cancelled(&self) -> WaitForCancellationFuture<'_> {
         self.token.cancelled()
-    }
-
-    /// Get a clone of the cancellation token.
-    pub fn cancelled_owned(&self) -> WaitForCancellationFutureOwned {
-        self.token.clone().cancelled_owned()
-    }
-
-    /// Returns a future that resolves when the token is fired.
-    ///
-    /// See [`TaskTracker::wait`]
-    pub fn wait(&self) -> TaskTrackerWaitFuture<'_> {
-        self.tasks.wait()
-    }
-
-    /// Convenience function to both fire the token and wait for all tasks to
-    /// complete.
-    pub fn shutdown(&self) -> TaskTrackerWaitFuture<'_> {
-        self.cancel();
-        self.wait()
     }
 
     /// Get a child [`TaskSet`]. This set will be fired when the parent
     /// set is fired, or may be fired independently.
-    pub fn child(&self) -> Self {
+    pub(crate) fn child(&self) -> Self {
         Self {
             tasks: TaskTracker::new(),
             token: self.token.child_token(),
@@ -118,7 +83,12 @@ impl TaskSet {
     }
 
     /// Spawn a future on the provided handle, and add it to the task set.
-    pub fn spawn<F>(&self, task: F) -> JoinHandle<Option<F::Output>>
+    ///
+    /// ## Panics
+    ///
+    /// This will panic if called outside the context of a Tokio runtime when
+    /// `self.handle` is `None`.
+    pub(crate) fn spawn<F>(&self, task: F) -> JoinHandle<Option<F::Output>>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
@@ -127,8 +97,13 @@ impl TaskSet {
     }
 
     /// Spawn a blocking future on the provided handle, and add it to the task
-    /// set
-    pub fn spawn_blocking<F>(&self, task: F) -> JoinHandle<Option<F::Output>>
+    /// set.
+    ///
+    /// ## Panics
+    ///
+    /// This will panic if called outside the context of a Tokio runtime when
+    /// `self.handle` is `None`.
+    pub(crate) fn spawn_blocking<F>(&self, task: F) -> JoinHandle<Option<F::Output>>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,

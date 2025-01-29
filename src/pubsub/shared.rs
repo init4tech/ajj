@@ -31,7 +31,7 @@ impl From<TaskSet> for ServerShutdown {
 impl ServerShutdown {
     /// Create a new `ServerShutdown` with the given shutdown signal and task
     /// set.
-    pub fn new(task_set: TaskSet) -> Self {
+    pub(crate) const fn new(task_set: TaskSet) -> Self {
         Self { task_set }
     }
 }

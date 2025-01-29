@@ -328,7 +328,10 @@ where
         fut
     }
 
-    /// Nest this router into a new Axum router, with the specified path.
+    /// Nest this router into a new Axum router, with the specified path and the currently-running
+    ///
+    /// Users needing specific control over the runtime should use
+    /// [`Router::into_axum_with_handle`] instead.
     #[cfg(feature = "axum")]
     pub fn into_axum(self, path: &str) -> axum::Router<S> {
         axum::Router::new().route(path, axum::routing::post(crate::axum::IntoAxum::from(self)))
@@ -336,6 +339,13 @@ where
 
     /// Nest this router into a new Axum router, with the specified path and
     /// using the specified runtime handle.
+    ///
+    /// This method allows users to specify a runtime handle for the router to
+    /// use. This runtime is accessible to all handlers invoked by the router.
+    /// Handlers.
+    ///
+    /// Tasks spawned by the router will be spawned on the provided runtime,
+    /// and automatically cancelled when the returned `axum::Router` is dropped.
     pub fn into_axum_with_handle(
         self,
         path: &str,

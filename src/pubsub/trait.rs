@@ -37,6 +37,24 @@ pub type In<T> = <T as Listener>::ReqStream;
 /// may produce arbitrary response bodies, only the server developer can
 /// accurately set this value. We have provided a low default. Setting it too
 /// high may allow resource exhaustion attacks.
+///
+/// ## Task management
+///
+/// When using the default impls of [`Connect::serve`] and
+/// [`Connect::serve_with_handle`], the library will manage task sets for
+/// inbound connections. These follow a per-connection hierarchical task model.
+/// The root task set is associated with the server, and is used to spawn a
+/// task that listens for inbound connections. Each connection is then given
+/// a child task set, which is used to spawn tasks for that connection.
+///
+/// This task set is propagated to [`Handler`]s via the [`HandlerCtx`]. They may
+/// then use it to spawn tasks that are themselves associated with the
+/// connection. This ensures that, for properly-implemented [`Handler`]s, all
+/// tasks associated with a connection are automatically cancelled and cleaned
+/// up when the connection is closed.
+///
+/// [`Handler`]: crate::Handler
+/// [`HandlerCtx`]: crate::HandlerCtx
 pub trait Connect: Send + Sync + Sized {
     /// The listener type produced by the connect object.
     type Listener: Listener;
@@ -70,7 +88,9 @@ pub trait Connect: Send + Sync + Sized {
     /// We do not recommend overriding this method. Doing so will opt out of
     /// the library's pubsub task system. Users overriding this method must
     /// manually handle connection tasks.
-    fn serve_on_handle(
+    ///
+    /// The provided handle will be used to spawn tasks.
+    fn serve_with_handle(
         self,
         router: crate::Router<()>,
         handle: Handle,
@@ -99,11 +119,15 @@ pub trait Connect: Send + Sync + Sized {
     /// We do not recommend overriding this method. Doing so will opt out of
     /// the library's pubsub task system. Users overriding this method must
     /// manually handle connection tasks.
+    ///
+    /// ## Panics
+    ///
+    /// This will panic if called outside the context of a Tokio runtime.
     fn serve(
         self,
         router: crate::Router<()>,
     ) -> impl Future<Output = Result<ServerShutdown, Self::Error>> + Send {
-        self.serve_on_handle(router, Handle::current())
+        self.serve_with_handle(router, Handle::current())
     }
 }
 

@@ -54,6 +54,62 @@ pub struct PhantomParams<T>(PhantomData<T>);
 /// };
 /// ```
 ///
+/// ### The [`HandlerCtx`]: tasks and notifications.
+///
+/// Any handler may accept the [`HandlerCtx`] as its first argument. This
+/// context object is used to context associated with the client connection. It
+/// can be used to spawn tasks and (when `pubsub` is enabled) send notifications
+/// to the client.
+///
+/// Handlers **SHOULD NOT** use [`tokio::spawn`] or
+/// [`tokio::task::spawn_blocking`] directly. Instead, they should use the
+/// [`HandlerCtx::spawn`] or [`HandlerCtx::spawn_blocking`] methods. These
+/// methods ensure that tasks are associated with the client connection, and
+/// are cleaned up promptly when the connection is closed, and that the server's
+/// runtime configuration is respected.
+///
+/// When the task itself requires a context, [`HandlerCtx::spawn_with_ctx`]
+/// and [`HandlerCtx::spawn_blocking_with_ctx`] can be used to provide a context
+/// to the spawned task. This is a thin wrapper around cloning the context and
+/// moving it into the spawned future.
+///
+/// ```
+/// use ajj::{Router, HandlerCtx};
+///
+/// # fn test_fn() -> Router<()> {
+/// Router::new()
+///     .route("good citizenship", |ctx: HandlerCtx| async move {
+///         // Properly implemented task management
+///         ctx.spawn(async {
+///            // do something
+///         });
+///         Ok::<_, ()>(())
+///     })
+///     .route("bad citizenship", |ctx: HandlerCtx| async move {
+///         // Incorrect task management
+///         tokio::spawn(async {
+///            // do something
+///         });
+///         Ok::<_, ()>(())
+///     })
+/// # }
+/// ```
+///
+/// When running on pubsub, handlers can send notifications to the client. This
+/// is done by calling [`HandlerCtx::notify`]. Notifications are sent as JSON
+/// objects, and are queued for sending to the client. If the client is not
+/// reading from the connection, the notification will be queued in a buffer.
+/// If the buffer is full, the handler will be backpressured until the buffer
+/// has room.
+///
+/// We recommend that handler tasks `await` on the result of
+/// [`HandlerCtx::notify`], to ensure that they are backpressured when the
+/// notification buffer is full. If many tasks are attempting to notify the
+/// same client, the buffer may fill up, and backpressure the `RouteTask` from
+/// reading requests from the connection. This can lead to delays in request
+/// processing.
+///
+///
 /// ### Handler argument type inference
 ///
 /// When the following conditions are true, the compiler may fail to infer
@@ -191,22 +247,6 @@ pub struct PhantomParams<T>(PhantomData<T>);
 /// // specify the Payload on your Failure
 /// let handler_d = || async { ResponsePayload::<(), _>::internal_error_with_obj(4) };
 /// ```
-///
-/// ## Notifications
-///
-/// When running on pubsub, handlers can send notifications to the client. This
-/// is done by calling [`HandlerCtx::notify`]. Notifications are sent as JSON
-/// objects, and are queued for sending to the client. If the client is not
-/// reading from the connection, the notification will be queued in a buffer.
-/// If the buffer is full, the handler will be backpressured until the buffer
-/// has room.
-///
-/// We recommend that handlers `await` on the result of [`HandlerCtx::notify`],
-/// to ensure that they are backpressured when the notification buffer is full.
-/// If many tasks are attempting to notify the same client, the buffer may fill
-/// up, and backpressure the `RouteTask` from reading requests from the
-/// connection. This can lead to delays in request processing.
-///
 #[cfg_attr(
     feature = "pubsub",
     doc = "see the [`Listener`] documetnation for more information."
