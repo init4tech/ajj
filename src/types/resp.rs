@@ -203,6 +203,18 @@ impl<Payload, ErrData> ResponsePayload<Payload, ErrData> {
     pub const fn is_error(&self) -> bool {
         matches!(self, Self::Failure(_))
     }
+
+    /// Convert a result into a response payload, by converting the error into
+    /// an internal error message.
+    pub fn convert_internal_error_msg<T>(res: Result<Payload, T>) -> Self
+    where
+        T: Into<Cow<'static, str>>,
+    {
+        match res {
+            Ok(payload) => Self::Success(payload),
+            Err(err) => Self::Failure(ErrorPayload::internal_error_message(err.into())),
+        }
+    }
 }
 
 /// A JSON-RPC 2.0 error object.

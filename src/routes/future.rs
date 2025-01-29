@@ -13,10 +13,9 @@ use tower::util::{BoxCloneSyncService, Oneshot};
 
 use super::Response;
 
-/// A future produced by [`Router::call_with_state`]. This should only be
-/// instantiated by that method.
+/// A future produced by the [`Router`].
 ///
-/// [`Route`]: crate::routes::Route
+/// [`Router`]: crate::Router
 #[pin_project]
 pub struct RouteFuture {
     /// The inner [`Route`] future.
@@ -159,7 +158,9 @@ impl BatchFuture {
     }
 
     /// Push a parse result into the batch. Convenience function to simplify
-    /// [`Router::call_batch_with_state`] logic.
+    /// [`Router`] logic.
+    ///
+    /// [`Router`]: crate::Router
     pub(crate) fn push_parse_result(&mut self, result: Result<RouteFuture, RequestError>) {
         match result {
             Ok(fut) => self.push(fut),
