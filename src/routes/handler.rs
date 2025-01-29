@@ -83,6 +83,8 @@ pub struct PhantomParams<T>(PhantomData<T>);
 ///     .route("bar", |state: u8| ok())
 ///     // "baz" is unambiguous, as it has both `params` and `state` arguments
 ///     .route("baz", |params: u8, state: u8| ok())
+///     // this is unambiguous, but a bit ugly.
+///     .route("qux", |params: u8, _: u8| ok())
 ///     .with_state(3u8)
 /// # }
 /// ```
@@ -125,7 +127,7 @@ pub struct PhantomParams<T>(PhantomData<T>);
 /// However this still leaves the problem of "bar". There is no way to express
 /// "bar" unambiguously by reordering method invocations. In this case, you can
 /// use the [`Params`] and [`State`] wrapper structs to disambiguate the
-/// argument type.
+/// argument type. This should seem familiar to users of [`axum`].
 ///
 /// ```
 /// # use ajj::{Router, Params, State};
@@ -148,7 +150,8 @@ pub struct PhantomParams<T>(PhantomData<T>);
 /// ```
 ///
 /// These wrapper structs are available only when necessary, and may not be
-/// used when the `Handler` impl is unambiguous.
+/// used when the `Handler` impl is unambiguous. Ambiguous handlers will always
+/// result in a compilation error.
 ///
 /// ### Handler return type inference
 ///
