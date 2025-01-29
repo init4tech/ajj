@@ -79,7 +79,24 @@ impl HandlerCtx {
 #[derive(Debug, Clone)]
 pub struct HandlerArgs {
     /// The handler context.
-    pub ctx: HandlerCtx,
+    pub(crate) ctx: HandlerCtx,
     /// The JSON-RPC request.
-    pub req: Request,
+    pub(crate) req: Request,
+}
+
+impl HandlerArgs {
+    /// Create new handler arguments.
+    pub const fn new(ctx: HandlerCtx, req: Request) -> Self {
+        Self { ctx, req }
+    }
+
+    /// Get a reference to the handler context.
+    pub const fn ctx(&self) -> &HandlerCtx {
+        &self.ctx
+    }
+
+    /// Get a reference to the JSON-RPC request.
+    pub const fn req(&self) -> &Request {
+        &self.req
+    }
 }

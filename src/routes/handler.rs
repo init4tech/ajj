@@ -149,7 +149,7 @@ macro_rules! convert_result {
 /// // etc.
 ///
 /// impl<S> Handler<(MyMarker, ), S> for MyHandler {
-///   type Future = Pin<Box<dyn Future<Output = Box<RawValue>> + Send>>;
+///   type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 ///
 ///   fn call_with_state(self, _args: HandlerArgs, _state: S) -> Self::Future {
 ///     todo!("use nothing but your struct")
@@ -157,7 +157,7 @@ macro_rules! convert_result {
 /// }
 ///
 /// impl<S> Handler<(MyMarker, HandlerArgs), S> for MyHandler {
-///   type Future = Pin<Box<dyn Future<Output = Box<RawValue>> + Send>>;
+///   type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 ///
 ///   fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
 ///     todo!("use the args")
@@ -167,7 +167,7 @@ macro_rules! convert_result {
 #[cfg_attr(feature = "pubsub", doc = " [`Listener`]: crate::pubsub::Listener")]
 pub trait Handler<T, S>: Clone + Send + Sync + Sized + 'static {
     /// The future returned by the handler.
-    type Future: Future<Output = Box<RawValue>> + Send + 'static;
+    type Future: Future<Output = Option<Box<RawValue>>> + Send + 'static;
 
     /// Call the handler with the given request and state.
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future;
@@ -236,9 +236,9 @@ where
     T: Send + 'static,
     S: Clone + Send + Sync + 'static,
 {
-    type Response = Box<RawValue>;
+    type Response = Option<Box<RawValue>>;
     type Error = Infallible;
-    type Future = Pin<Box<dyn Future<Output = Result<Box<RawValue>, Infallible>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Result<Option<Box<RawValue>>, Infallible>> + Send>>;
 
     fn poll_ready(&mut self, _cx: &mut task::Context<'_>) -> task::Poll<Result<(), Self::Error>> {
         task::Poll::Ready(Ok(()))
@@ -272,7 +272,7 @@ where
     Payload: RpcSend,
     ErrData: RpcSend,
 {
-    type Future = Pin<Box<dyn Future<Output = Box<RawValue>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         let id = args.req.id_owned();
@@ -280,11 +280,7 @@ where
         Box::pin(async move {
             let payload = self().await;
 
-            Response {
-                id,
-                payload: &payload,
-            }
-            .to_json()
+            Response::maybe(id.as_deref(), &payload)
         })
     }
 }
@@ -296,7 +292,7 @@ where
     Payload: RpcSend,
     ErrData: RpcSend,
 {
-    type Future = Pin<Box<dyn Future<Output = Box<RawValue>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         let id = args.req.id_owned();
@@ -304,11 +300,7 @@ where
 
         Box::pin(async move {
             let payload = self(ctx).await;
-            Response {
-                id,
-                payload: &payload,
-            }
-            .to_json()
+            Response::maybe(id.as_deref(), &payload)
         })
     }
 }
@@ -321,23 +313,18 @@ where
     Payload: RpcSend,
     ErrData: RpcSend,
 {
-    type Future = Pin<Box<dyn Future<Output = Box<RawValue>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         let HandlerArgs { req, .. } = args;
         Box::pin(async move {
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
-                return Response::invalid_params(id);
+                return Response::maybe_invalid_params(id.as_deref());
             };
 
             let payload = self(params).await;
-
-            Response {
-                id,
-                payload: &payload,
-            }
-            .to_json()
+            Response::maybe(id.as_deref(), &payload)
         })
     }
 }
@@ -351,7 +338,7 @@ where
     Payload: RpcSend,
     ErrData: RpcSend,
 {
-    type Future = Pin<Box<dyn Future<Output = Box<RawValue>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         Box::pin(async move {
@@ -359,17 +346,13 @@ where
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
-                return Response::invalid_params(id);
+                return Response::maybe_invalid_params(id.as_deref());
             };
 
             drop(req); // deallocate explicitly. No funny business.
 
             let payload = self(ctx, params).await;
-            Response {
-                id,
-                payload: &payload,
-            }
-            .to_json()
+            Response::maybe(id.as_deref(), &payload)
         })
     }
 }
@@ -383,7 +366,7 @@ where
     ErrData: RpcSend,
     S: Send + Sync + 'static,
 {
-    type Future = Pin<Box<dyn Future<Output = Box<RawValue>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         Box::pin(async move {
@@ -391,15 +374,13 @@ where
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
-                return Response::invalid_params(id);
+                return Response::maybe_invalid_params(id.as_deref());
             };
             drop(req); // deallocate explicitly. No funny business.
 
-            Response {
-                id,
-                payload: &self(params, state).await,
-            }
-            .to_json()
+            let payload = self(params, state).await;
+
+            Response::maybe(id.as_deref(), &payload)
         })
     }
 }
@@ -412,7 +393,7 @@ where
     ErrData: RpcSend,
     S: Send + Sync + 'static,
 {
-    type Future = Pin<Box<dyn Future<Output = Box<RawValue>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         Box::pin(async move {
@@ -422,11 +403,9 @@ where
 
             drop(req); // deallocate explicitly. No funny business.
 
-            Response {
-                id,
-                payload: &self(ctx, state).await,
-            }
-            .to_json()
+            let payload = self(ctx, state).await;
+
+            Response::maybe(id.as_deref(), &payload)
         })
     }
 }
@@ -441,7 +420,7 @@ where
     ErrData: RpcSend,
     S: Send + Sync + 'static,
 {
-    type Future = Pin<Box<dyn Future<Output = Box<RawValue>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         Box::pin(async move {
@@ -449,16 +428,13 @@ where
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
-                return Response::invalid_params(id);
+                return Response::maybe_invalid_params(id.as_deref());
             };
 
             drop(req); // deallocate explicitly. No funny business.
 
-            Response {
-                id,
-                payload: &self(ctx, params, state).await,
-            }
-            .to_json()
+            let payload = self(ctx, params, state).await;
+            Response::maybe(id.as_deref(), &payload)
         })
     }
 }
@@ -470,17 +446,14 @@ where
     Payload: RpcSend,
     ErrData: RpcSend,
 {
-    type Future = Pin<Box<dyn Future<Output = Box<RawValue>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         let id = args.req.id_owned();
         drop(args);
         Box::pin(async move {
-            Response {
-                id,
-                payload: &convert_result!(self().await),
-            }
-            .to_json()
+            let payload = self().await;
+            Response::maybe(id.as_deref(), &convert_result!(payload))
         })
     }
 }
@@ -492,7 +465,7 @@ where
     Payload: RpcSend,
     ErrData: RpcSend,
 {
-    type Future = Pin<Box<dyn Future<Output = Box<RawValue>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         let HandlerArgs { ctx, req } = args;
@@ -502,11 +475,8 @@ where
         drop(req);
 
         Box::pin(async move {
-            Response {
-                id,
-                payload: &convert_result!(self(ctx).await),
-            }
-            .to_json()
+            let payload = convert_result!(self(ctx).await);
+            Response::maybe(id.as_deref(), &payload)
         })
     }
 }
@@ -519,7 +489,7 @@ where
     Payload: RpcSend,
     ErrData: RpcSend,
 {
-    type Future = Pin<Box<dyn Future<Output = Box<RawValue>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         Box::pin(async move {
@@ -527,16 +497,14 @@ where
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
-                return Response::invalid_params(id);
+                return Response::maybe_invalid_params(id.as_deref());
             };
 
             drop(req); // deallocate explicitly. No funny business.
 
-            Response {
-                id,
-                payload: &convert_result!(self(params).await),
-            }
-            .to_json()
+            let payload = convert_result!(self(params).await);
+
+            Response::maybe(id.as_deref(), &payload)
         })
     }
 }
@@ -549,7 +517,7 @@ where
     Payload: RpcSend,
     ErrData: RpcSend,
 {
-    type Future = Pin<Box<dyn Future<Output = Box<RawValue>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         Box::pin(async move {
@@ -557,16 +525,14 @@ where
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
-                return Response::invalid_params(id);
+                return Response::maybe_invalid_params(id.as_deref());
             };
 
             drop(req); // deallocate explicitly. No funny business.
 
-            Response {
-                id,
-                payload: &convert_result!(self(ctx, params).await),
-            }
-            .to_json()
+            let payload = convert_result!(self(ctx, params).await);
+
+            Response::maybe(id.as_deref(), &payload)
         })
     }
 }
@@ -580,7 +546,7 @@ where
     ErrData: RpcSend,
     S: Send + Sync + 'static,
 {
-    type Future = Pin<Box<dyn Future<Output = Box<RawValue>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         Box::pin(async move {
@@ -588,16 +554,14 @@ where
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
-                return Response::invalid_params(id);
+                return Response::maybe_invalid_params(id.as_deref());
             };
 
             drop(req); // deallocate explicitly. No funny business.
 
-            Response {
-                id,
-                payload: &convert_result!(self(params, state).await),
-            }
-            .to_json()
+            let payload = convert_result!(self(params, state).await);
+
+            Response::maybe(id.as_deref(), &payload)
         })
     }
 }
@@ -610,7 +574,7 @@ where
     ErrData: RpcSend,
     S: Send + Sync + 'static,
 {
-    type Future = Pin<Box<dyn Future<Output = Box<RawValue>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         let HandlerArgs { ctx, req } = args;
@@ -620,11 +584,9 @@ where
         drop(req);
 
         Box::pin(async move {
-            Response {
-                id,
-                payload: &convert_result!(self(ctx, state).await),
-            }
-            .to_json()
+            let payload = convert_result!(self(ctx, state).await);
+
+            Response::maybe(id.as_deref(), &payload)
         })
     }
 }
@@ -638,7 +600,7 @@ where
     ErrData: RpcSend,
     S: Send + Sync + 'static,
 {
-    type Future = Pin<Box<dyn Future<Output = Box<RawValue>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         Box::pin(async move {
@@ -646,16 +608,14 @@ where
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
-                return Response::invalid_params(id);
+                return Response::maybe_invalid_params(id.as_deref());
             };
 
             drop(req); // deallocate explicitly. No funny business.
 
-            Response {
-                id,
-                payload: &convert_result!(self(ctx, params, state).await),
-            }
-            .to_json()
+            let payload = convert_result!(self(ctx, params, state).await);
+
+            Response::maybe(id.as_deref(), &payload)
         })
     }
 }

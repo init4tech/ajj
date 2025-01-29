@@ -1,7 +1,4 @@
-use crate::{
-    types::{Request, Response},
-    HandlerArgs,
-};
+use crate::types::{InboundData, Response};
 use axum::{extract::FromRequest, response::IntoResponse};
 use bytes::Bytes;
 use std::{future::Future, pin::Pin};
@@ -18,20 +15,19 @@ where
                 return Box::<str>::from(Response::parse_error()).into_response();
             };
 
-            let Ok(req) = Request::try_from(bytes) else {
-                return Box::<str>::from(Response::parse_error()).into_response();
-            };
+            // If the inbound data is not currently parsable, we
+            // send an empty one it to the router, as the router enforces
+            // the specification.
+            let req = InboundData::try_from(bytes).unwrap_or_default();
 
-            let args = HandlerArgs {
-                ctx: Default::default(),
-                req,
-            };
-
-            // Default handler ctx does not allow for notifications, which is
-            // what we want over HTTP.
-            let response = unwrap_infallible!(self.call_with_state(args, state).await);
-
-            Box::<str>::from(response).into_response()
+            if let Some(response) = self
+                .call_batch_with_state(Default::default(), req, state)
+                .await
+            {
+                Box::<str>::from(response).into_response()
+            } else {
+                ().into_response()
+            }
         })
     }
 }

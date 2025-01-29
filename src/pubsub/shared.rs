@@ -2,8 +2,7 @@ use core::fmt;
 
 use crate::{
     pubsub::{In, JsonSink, Listener, Out},
-    types::Request,
-    HandlerArgs,
+    types::InboundData,
 };
 use serde_json::value::RawValue;
 use tokio::{
@@ -193,31 +192,25 @@ where
             select! {
                 biased;
                 _ = write_task.closed() => {
-                    debug!("IpcWriteTask has gone away");
+                    debug!("WriteTask has gone away");
                     break;
                 }
                 item = requests.next() => {
                     let Some(item) = item else {
-                        trace!("IPC read stream has closed");
+                        trace!("inbound read stream has closed");
                         break;
                     };
 
-                    let req = match Request::try_from(item) {
-                        Ok(req) => req,
-                        Err(err) => {
-                            tracing::warn!(%err, "inbound request is malformatted");
-                            continue
-                        }
-                    };
+                    // If the inbound data is not currently parsable, we
+                    // send an empty one it to the router, as the router
+                    // enforces the specification.
+                    let reqs = InboundData::try_from(item).unwrap_or_default();
 
-                    let span = debug_span!("ipc request handling", id = req.id(), method = req.method());
+                    let span = debug_span!("pubsub request handling", reqs = reqs.len());
 
-                    let args = HandlerArgs {
-                        ctx: write_task.clone().into(),
-                        req,
-                    };
+                    let ctx = write_task.clone().into();
 
-                    let fut = router.handle_request(args);
+                    let fut = router.handle_request_batch(ctx, reqs);
                     let write_task = write_task.clone();
 
                     // Acquiring the permit before spawning the task means that
@@ -232,16 +225,14 @@ where
                     // Run the future in a new task.
                     tokio::spawn(
                         async move {
-                            // Run the request handler and serialize the
-                            // response.
-                            let rv = fut.await.expect("infallible");
-
                             // Send the response to the write task.
                             // we don't care if the receiver has gone away,
                             // as the task is done regardless.
-                            let _ = permit.send(
-                                rv
-                            );
+                            if let Some(rv) = fut.await {
+                                let _ = permit.send(
+                                    rv
+                                );
+                            }
                         }
                         .instrument(span)
                     );

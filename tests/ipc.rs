@@ -27,8 +27,7 @@ async fn serve_ipc() -> (ServerShutdown, TempPath) {
     let temp = NamedTempFile::new().unwrap().into_temp_path();
     let name = to_name(temp.as_os_str()).unwrap();
 
-    dbg!(&name);
-    dbg!(std::fs::remove_file(&temp).unwrap());
+    std::fs::remove_file(&temp).unwrap();
 
     let shutdown = ListenerOptions::new()
         .name(name)
@@ -83,9 +82,10 @@ impl TestClient for IpcClient {
 }
 
 #[tokio::test]
-async fn basic_ipc() {
+async fn test_ipc() {
     let (_server, temp) = serve_ipc().await;
-    let client = IpcClient::new(&temp).await;
+    let mut client = IpcClient::new(&temp).await;
 
-    common::basic_tests(client).await;
+    common::basic_tests(&mut client).await;
+    common::batch_tests(&mut client).await;
 }

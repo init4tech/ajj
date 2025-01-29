@@ -63,8 +63,9 @@ async fn ws_client() -> WsClient {
 }
 
 #[tokio::test]
-async fn basic_ws() {
+async fn test_ws() {
     let _server = serve_ws().await;
-    let client = ws_client().await;
-    common::basic_tests(client).await;
+    let mut client = ws_client().await;
+    common::basic_tests(&mut client).await;
+    common::batch_tests(&mut client).await;
 }
