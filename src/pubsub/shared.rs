@@ -238,7 +238,7 @@ where
                     };
 
                     // Run the future in a new task.
-                    tokio::spawn(
+                    tasks.spawn(
                         async move {
                             // Send the response to the write task.
                             // we don't care if the receiver has gone away,
