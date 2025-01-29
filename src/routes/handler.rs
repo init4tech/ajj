@@ -79,14 +79,16 @@ pub struct PhantomParams<T>(PhantomData<T>);
 /// # fn test_fn() -> Router<()> {
 /// Router::new()
 ///     .route("good citizenship", |ctx: HandlerCtx| async move {
-///         // Properly implemented task management
+///         // Properly implemented task management. This task will
+///         // automatically be cleaned up when the connection is closed.
 ///         ctx.spawn(async {
 ///            // do something
 ///         });
 ///         Ok::<_, ()>(())
 ///     })
 ///     .route("bad citizenship", |ctx: HandlerCtx| async move {
-///         // Incorrect task management
+///         // Incorrect task management. Will result in the task running for
+///         // some amount of time after the connection is closed.
 ///         tokio::spawn(async {
 ///            // do something
 ///         });
