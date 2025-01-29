@@ -1,11 +1,14 @@
-use crate::pubsub::{
-    shared::{ConnectionManager, ListenerTask, DEFAULT_NOTIFICATION_BUFFER_PER_CLIENT},
-    ServerShutdown,
+use crate::{
+    pubsub::{
+        shared::{ConnectionManager, ListenerTask, DEFAULT_NOTIFICATION_BUFFER_PER_CLIENT},
+        ServerShutdown,
+    },
+    TaskSet,
 };
 use bytes::Bytes;
 use serde_json::value::RawValue;
 use std::future::Future;
-use tokio::sync::watch;
+use tokio::runtime::Handle;
 use tokio_stream::Stream;
 
 /// Convenience alias for naming stream halves.
@@ -67,25 +70,40 @@ pub trait Connect: Send + Sync + Sized {
     /// We do not recommend overriding this method. Doing so will opt out of
     /// the library's pubsub task system. Users overriding this method must
     /// manually handle connection tasks.
+    fn serve_on_handle(
+        self,
+        router: crate::Router<()>,
+        handle: Handle,
+    ) -> impl Future<Output = Result<ServerShutdown, Self::Error>> + Send {
+        async move {
+            let root_tasks: TaskSet = handle.into();
+            let notification_buffer_per_task = self.notification_buffer_size();
+
+            ListenerTask {
+                listener: self.make_listener().await?,
+                manager: ConnectionManager {
+                    next_id: 0,
+                    router,
+                    notification_buffer_per_task,
+                    root_tasks: root_tasks.clone(),
+                },
+            }
+            .spawn();
+            Ok(root_tasks.into())
+        }
+    }
+
+    /// Instantiate and run a task to accept connections, returning a shutdown
+    /// signal.
+    ///
+    /// We do not recommend overriding this method. Doing so will opt out of
+    /// the library's pubsub task system. Users overriding this method must
+    /// manually handle connection tasks.
     fn serve(
         self,
         router: crate::Router<()>,
     ) -> impl Future<Output = Result<ServerShutdown, Self::Error>> + Send {
-        async move {
-            let notification_buffer_per_task = self.notification_buffer_size();
-            let (tx, rx) = watch::channel(());
-            ListenerTask {
-                listener: self.make_listener().await?,
-                manager: ConnectionManager {
-                    shutdown: rx,
-                    next_id: 0,
-                    router,
-                    notification_buffer_per_task,
-                },
-            }
-            .spawn();
-            Ok(tx.into())
-        }
+        self.serve_on_handle(router, Handle::current())
     }
 }
 

@@ -331,7 +331,20 @@ where
     /// Nest this router into a new Axum router, with the specified path.
     #[cfg(feature = "axum")]
     pub fn into_axum(self, path: &str) -> axum::Router<S> {
-        axum::Router::new().route(path, axum::routing::post(self))
+        axum::Router::new().route(path, axum::routing::post(crate::axum::IntoAxum::from(self)))
+    }
+
+    /// Nest this router into a new Axum router, with the specified path and
+    /// using the specified runtime handle.
+    pub fn into_axum_with_handle(
+        self,
+        path: &str,
+        handle: tokio::runtime::Handle,
+    ) -> axum::Router<S> {
+        axum::Router::new().route(
+            path,
+            axum::routing::post(crate::axum::IntoAxum::new(self, handle)),
+        )
     }
 }
 

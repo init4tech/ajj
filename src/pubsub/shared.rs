@@ -3,13 +3,10 @@ use core::fmt;
 use crate::{
     pubsub::{In, JsonSink, Listener, Out},
     types::InboundData,
+    HandlerCtx, TaskSet,
 };
 use serde_json::value::RawValue;
-use tokio::{
-    select,
-    sync::{mpsc, oneshot, watch},
-    task::JoinHandle,
-};
+use tokio::{select, sync::mpsc, task::JoinHandle};
 use tokio_stream::StreamExt;
 use tracing::{debug, debug_span, error, instrument, trace, Instrument};
 
@@ -22,12 +19,26 @@ pub type ConnectionId = u64;
 /// Holds the shutdown signal for some server.
 #[derive(Debug)]
 pub struct ServerShutdown {
-    pub(crate) _shutdown: watch::Sender<()>,
+    pub(crate) task_set: TaskSet,
 }
 
-impl From<watch::Sender<()>> for ServerShutdown {
-    fn from(sender: watch::Sender<()>) -> Self {
-        Self { _shutdown: sender }
+impl From<TaskSet> for ServerShutdown {
+    fn from(task_set: TaskSet) -> Self {
+        Self::new(task_set)
+    }
+}
+
+impl ServerShutdown {
+    /// Create a new `ServerShutdown` with the given shutdown signal and task
+    /// set.
+    pub fn new(task_set: TaskSet) -> Self {
+        Self { task_set }
+    }
+}
+
+impl Drop for ServerShutdown {
+    fn drop(&mut self) {
+        self.task_set.cancel();
     }
 }
 
@@ -67,16 +78,17 @@ where
     }
 
     /// Spawn the future produced by [`Self::task_future`].
-    pub(crate) fn spawn(self) -> JoinHandle<()> {
+    pub(crate) fn spawn(self) -> JoinHandle<Option<()>> {
+        let tasks = self.manager.root_tasks.clone();
         let future = self.task_future();
-        tokio::spawn(future)
+        tasks.spawn(future)
     }
 }
 
 /// The `ConnectionManager` provides connections with IDs, and handles spawning
 /// the [`RouteTask`] for each connection.
 pub(crate) struct ConnectionManager {
-    pub(crate) shutdown: watch::Receiver<()>,
+    pub(crate) root_tasks: TaskSet,
 
     pub(crate) next_id: ConnectionId,
 
@@ -107,19 +119,18 @@ impl ConnectionManager {
     ) -> (RouteTask<T>, WriteTask<T>) {
         let (tx, rx) = mpsc::channel(self.notification_buffer_per_task);
 
-        let (gone_tx, gone_rx) = oneshot::channel();
+        let tasks = self.root_tasks.child();
 
         let rt = RouteTask {
             router: self.router(),
             conn_id,
             write_task: tx,
             requests,
-            gone: gone_tx,
+            tasks: tasks.clone(),
         };
 
         let wt = WriteTask {
-            shutdown: self.shutdown.clone(),
-            gone: gone_rx,
+            tasks,
             conn_id,
             json: rx,
             connection,
@@ -156,8 +167,8 @@ struct RouteTask<T: crate::pubsub::Listener> {
     pub(crate) write_task: mpsc::Sender<Box<RawValue>>,
     /// Stream of requests.
     pub(crate) requests: In<T>,
-    /// Sender to the [`WriteTask`], to notify it that this task is done.
-    pub(crate) gone: oneshot::Sender<()>,
+    /// The task set for this connection
+    pub(crate) tasks: TaskSet,
 }
 
 impl<T: crate::pubsub::Listener> fmt::Debug for RouteTask<T> {
@@ -184,7 +195,7 @@ where
             router,
             mut requests,
             write_task,
-            gone,
+            tasks,
             ..
         } = self;
 
@@ -208,7 +219,11 @@ where
 
                     let span = debug_span!("pubsub request handling", reqs = reqs.len());
 
-                    let ctx = write_task.clone().into();
+                    let ctx =
+                    HandlerCtx::new(
+                        Some(write_task.clone()),
+                        tasks.clone(),
+                    );
 
                     let fut = router.handle_request_batch(ctx, reqs);
                     let write_task = write_task.clone();
@@ -239,27 +254,23 @@ where
                 }
             }
         }
-        // No funny business. Drop the gone signal.
-        drop(gone);
+        tasks.cancel();
     }
 
     /// Spawn the future produced by [`Self::task_future`].
-    pub(crate) fn spawn(self) -> tokio::task::JoinHandle<()> {
+    pub(crate) fn spawn(self) -> tokio::task::JoinHandle<Option<()>> {
+        let tasks = self.tasks.clone();
+
         let future = self.task_future();
-        tokio::spawn(future)
+
+        tasks.spawn(future)
     }
 }
 
 /// The Write Task is responsible for writing JSON to the outbound connection.
 struct WriteTask<T: Listener> {
-    /// Shutdown signal.
-    ///
-    /// Shutdowns bubble back up to [`RouteTask`] when the  write task is
-    /// dropped, via the closed `json` channel.
-    pub(crate) shutdown: watch::Receiver<()>,
-
-    /// Signal that the connection has gone away.
-    pub(crate) gone: oneshot::Receiver<()>,
+    /// Task set
+    pub(crate) tasks: TaskSet,
 
     /// ID of the connection.
     pub(crate) conn_id: ConnectionId,
@@ -284,22 +295,18 @@ impl<T: Listener> WriteTask<T> {
     #[instrument(skip(self), fields(conn_id = self.conn_id))]
     pub(crate) async fn task_future(self) {
         let WriteTask {
-            mut shutdown,
-            mut gone,
+            tasks,
             mut json,
             mut connection,
             ..
         } = self;
-        shutdown.mark_unchanged();
+
         loop {
             select! {
                 biased;
-                _ = &mut gone => {
-                    debug!("Connection has gone away");
-                    break;
-                }
-                _ = shutdown.changed() => {
-                    debug!("shutdown signal received");
+
+                _ = tasks.cancelled() => {
+                    debug!("Shutdown signal received");
                     break;
                 }
                 json = json.recv() => {
@@ -317,7 +324,9 @@ impl<T: Listener> WriteTask<T> {
     }
 
     /// Spawn the future produced by [`Self::task_future`].
-    pub(crate) fn spawn(self) -> JoinHandle<()> {
-        tokio::spawn(self.task_future())
+    pub(crate) fn spawn(self) -> tokio::task::JoinHandle<Option<()>> {
+        let tasks = self.tasks.clone();
+        let future = self.task_future();
+        tasks.spawn(future)
     }
 }

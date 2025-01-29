@@ -31,7 +31,7 @@ tokio-stream = { version = "0.1.17", optional = true }
 
 # ipc
 interprocess = { version = "2.2.2", features = ["async", "tokio"], optional = true }
-tokio-util = { version = "0.7.13", optional = true, features = ["io"] }
+tokio-util = { version = "0.7.13", optional = true, features = ["io", "rt"] }
 
 # ws
 tokio-tungstenite = { version = "0.26.1", features = ["rustls-tls-webpki-roots"], optional = true }

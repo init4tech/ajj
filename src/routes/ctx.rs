@@ -1,6 +1,8 @@
-use crate::{types::Request, RpcSend};
+use std::future::Future;
+
+use crate::{types::Request, RpcSend, TaskSet};
 use serde_json::value::RawValue;
-use tokio::sync::mpsc;
+use tokio::{runtime::Handle, sync::mpsc};
 use tracing::error;
 
 /// Errors that can occur when sending notifications.
@@ -23,28 +25,44 @@ pub enum NotifyError {
 #[derive(Debug, Clone, Default)]
 pub struct HandlerCtx {
     pub(crate) notifications: Option<mpsc::Sender<Box<RawValue>>>,
+
+    /// A task set on which to spawn tasks. This is used to coordinate
+    pub(crate) tasks: TaskSet,
 }
 
-impl From<mpsc::Sender<Box<RawValue>>> for HandlerCtx {
-    fn from(notifications: mpsc::Sender<Box<RawValue>>) -> Self {
+impl From<TaskSet> for HandlerCtx {
+    fn from(tasks: TaskSet) -> Self {
         Self {
-            notifications: Some(notifications),
+            notifications: None,
+            tasks,
+        }
+    }
+}
+
+impl From<Handle> for HandlerCtx {
+    fn from(handle: Handle) -> Self {
+        Self {
+            notifications: None,
+            tasks: handle.into(),
         }
     }
 }
 
 impl HandlerCtx {
-    /// Instantiate a new handler context.
-    pub const fn new() -> Self {
+    /// Create a new handler context.
+    pub fn new(notifications: Option<mpsc::Sender<Box<RawValue>>>, tasks: TaskSet) -> Self {
         Self {
-            notifications: None,
+            notifications,
+            tasks,
         }
     }
 
-    /// Instantiation a new handler context with notifications enabled.
-    pub const fn with_notifications(notifications: mpsc::Sender<Box<RawValue>>) -> Self {
+    /// Instantiation a new handler context with notifications enabled and a
+    /// default [`TaskSet`].
+    pub fn notifications_only(notifications: mpsc::Sender<Box<RawValue>>) -> Self {
         Self {
             notifications: Some(notifications),
+            tasks: Default::default(),
         }
     }
 
@@ -72,6 +90,23 @@ impl HandlerCtx {
         }
 
         Ok(())
+    }
+
+    /// Spawn a task on the task set.
+    pub fn spawn<F>(&self, f: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.tasks.spawn(f);
+    }
+
+    /// Spawn a task on the task set that may block.
+    pub fn spawn_blocking<F, R>(&self, f: F)
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        self.tasks.spawn_blocking(f);
     }
 }
 

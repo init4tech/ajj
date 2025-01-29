@@ -130,6 +130,8 @@ pub(crate) mod macros;
 
 #[cfg(feature = "axum")]
 mod axum;
+#[cfg(feature = "axum")]
+pub use axum::IntoAxum;
 
 mod error;
 pub use error::RegistrationError;
@@ -151,6 +153,9 @@ pub(crate) use routes::{BoxedIntoRoute, ErasedIntoRoute, Method, Route};
 
 mod router;
 pub use router::Router;
+
+mod tasks;
+pub use tasks::TaskSet;
 
 mod types;
 pub use types::{ErrorPayload, ResponsePayload};
