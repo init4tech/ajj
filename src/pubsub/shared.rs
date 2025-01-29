@@ -254,7 +254,7 @@ where
                 }
             }
         }
-        tasks.cancel();
+        tasks.shutdown().await;
     }
 
     /// Spawn the future produced by [`Self::task_future`].
@@ -321,6 +321,7 @@ impl<T: Listener> WriteTask<T> {
                 }
             }
         }
+        tasks.shutdown().await;
     }
 
     /// Spawn the future produced by [`Self::task_future`].

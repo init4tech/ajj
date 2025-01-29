@@ -51,6 +51,11 @@ impl TaskSet {
         self.token.cancel();
     }
 
+    pub(crate) async fn shutdown(&self) {
+        self.cancel();
+        self.tasks.wait().await
+    }
+
     /// Get a future that resolves when the token is fired.
     pub(crate) fn cancelled(&self) -> WaitForCancellationFuture<'_> {
         self.token.cancelled()
