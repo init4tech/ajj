@@ -125,7 +125,7 @@ impl HandlerCtx {
     ///
     /// The resulting [`JoinHandle`] will contain [`None`] if the task was
     /// cancelled, and `Some` otherwise.
-    pub fn spawn_blocking<F, R>(&self, f: F) -> JoinHandle<Option<F::Output>>
+    pub fn spawn_blocking<F>(&self, f: F) -> JoinHandle<Option<F::Output>>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
