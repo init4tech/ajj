@@ -8,6 +8,7 @@ use crate::{
 use serde_json::value::RawValue;
 use tokio::{select, sync::mpsc, task::JoinHandle};
 use tokio_stream::StreamExt;
+use tokio_util::task::task_tracker::TaskTrackerWaitFuture;
 use tracing::{debug, debug_span, error, instrument, trace, Instrument};
 
 /// Default notification buffer size per task.
@@ -33,6 +34,26 @@ impl ServerShutdown {
     /// set.
     pub(crate) const fn new(task_set: TaskSet) -> Self {
         Self { task_set }
+    }
+
+    /// Wait for the tasks spawned by the server to complete.
+    ///
+    /// This future will not resolve until both of the following are true:
+    /// - [`ServerShutdown::close`]
+    pub fn wait(&self) -> TaskTrackerWaitFuture<'_> {
+        self.task_set.wait()
+    }
+
+    /// Close the task tracker, allowing [`Self::wait`] futures to resolve.
+    pub fn close(&self) {
+        self.task_set.close();
+    }
+
+    /// Shutdown the server, and wait for all tasks to complete.
+    pub async fn shutdown(self) {
+        self.task_set.cancel();
+        self.close();
+        self.wait().await;
     }
 }
 
@@ -81,7 +102,7 @@ where
     pub(crate) fn spawn(self) -> JoinHandle<Option<()>> {
         let tasks = self.manager.root_tasks.clone();
         let future = self.task_future();
-        tasks.spawn(future)
+        tasks.spawn_cancellable(future)
     }
 }
 
@@ -238,7 +259,7 @@ where
                     };
 
                     // Run the future in a new task.
-                    tasks.spawn(
+                    tasks.spawn_cancellable(
                         async move {
                             // Send the response to the write task.
                             // we don't care if the receiver has gone away,
@@ -263,7 +284,7 @@ where
 
         let future = self.task_future();
 
-        tasks.spawn(future)
+        tasks.spawn_cancellable(future)
     }
 }
 
@@ -328,6 +349,6 @@ impl<T: Listener> WriteTask<T> {
     pub(crate) fn spawn(self) -> tokio::task::JoinHandle<Option<()>> {
         let tasks = self.tasks.clone();
         let future = self.task_future();
-        tasks.spawn(future)
+        tasks.spawn_cancellable(future)
     }
 }

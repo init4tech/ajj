@@ -2,8 +2,8 @@ use std::future::Future;
 
 use tokio::{runtime::Handle, task::JoinHandle};
 use tokio_util::{
-    sync::{CancellationToken, WaitForCancellationFuture},
-    task::TaskTracker,
+    sync::{CancellationToken, WaitForCancellationFuture, WaitForCancellationFutureOwned},
+    task::{task_tracker::TaskTrackerWaitFuture, TaskTracker},
 };
 
 /// This is a wrapper around a [`TaskTracker`] and a [`CancellationToken`]. It
@@ -49,6 +49,17 @@ impl TaskSet {
     /// Cancel the token, causing all tasks to be cancelled.
     pub(crate) fn cancel(&self) {
         self.token.cancel();
+        self.close();
+    }
+
+    /// Close the task tracker, allowing [`Self::wait`] futures to resolve.
+    pub(crate) fn close(&self) {
+        self.tasks.close();
+    }
+
+    /// Get a future that resolves when all tasks in the set are complete.
+    pub(crate) fn wait(&self) -> TaskTrackerWaitFuture<'_> {
+        self.tasks.wait()
     }
 
     pub(crate) async fn shutdown(&self) {
@@ -73,7 +84,10 @@ impl TaskSet {
 
     /// Prepare a future to be added to the task set, by wrapping it with a
     /// cancellation token.
-    fn prep_fut<F>(&self, task: F) -> impl Future<Output = Option<F::Output>> + Send + 'static
+    fn prep_abortable_fut<F>(
+        &self,
+        task: F,
+    ) -> impl Future<Output = Option<F::Output>> + Send + 'static
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
@@ -87,34 +101,86 @@ impl TaskSet {
         }
     }
 
-    /// Spawn a future on the provided handle, and add it to the task set.
+    /// Spawn a future on the provided handle, and add it to the task set. A
+    /// future spawned this way will be aborted when the [`TaskSet`] is
+    /// cancelled.
+    ///
+    /// If the future completes before the task set is cancelled, the result
+    /// will be returned. Otherwise, `None` will be returned.
     ///
     /// ## Panics
     ///
     /// This will panic if called outside the context of a Tokio runtime when
     /// `self.handle` is `None`.
-    pub(crate) fn spawn<F>(&self, task: F) -> JoinHandle<Option<F::Output>>
+    pub(crate) fn spawn_cancellable<F>(&self, task: F) -> JoinHandle<Option<F::Output>>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        self.tasks.spawn_on(self.prep_fut(task), &self.handle())
+        self.tasks
+            .spawn_on(self.prep_abortable_fut(task), &self.handle())
     }
 
     /// Spawn a blocking future on the provided handle, and add it to the task
-    /// set.
+    /// set. A future spawned this way will be cancelled when the [`TaskSet`]
+    /// is cancelled.
     ///
     /// ## Panics
     ///
     /// This will panic if called outside the context of a Tokio runtime when
     /// `self.handle` is `None`.
-    pub(crate) fn spawn_blocking<F>(&self, task: F) -> JoinHandle<Option<F::Output>>
+    pub(crate) fn spawn_blocking_cancellable<F>(&self, task: F) -> JoinHandle<Option<F::Output>>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
         let h = self.handle();
-        let task = self.prep_fut(task);
+        let task = self.prep_abortable_fut(task);
+        self.tasks
+            .spawn_blocking_on(move || h.block_on(task), &self.handle())
+    }
+
+    /// Spawn a future on the provided handle, and add it to the task set. A
+    /// future spawned this way will not be aborted when the [`TaskSet`] is
+    /// cancelled, instead it will receive a notification via a
+    /// [`CancellationToken`]. This allows the future to complete gracefully.
+    /// This is useful for tasks that need to clean up resources before
+    /// completing.
+    ///
+    /// ## Panics
+    ///
+    /// This will panic if called outside the context of a Tokio runtime when
+    /// `self.handle` is `None`.
+    pub(crate) fn spawn_graceful<F, Fut>(&self, task: F) -> JoinHandle<Fut::Output>
+    where
+        F: FnOnce(WaitForCancellationFutureOwned) -> Fut + Send + 'static,
+        Fut: Future + Send + 'static,
+        Fut::Output: Send + 'static,
+    {
+        let token = self.token.clone().cancelled_owned();
+        self.tasks.spawn_on(task(token), &self.handle())
+    }
+
+    /// Spawn a blocking future on the provided handle, and add it to the task
+    /// set. A future spawned this way will not be cancelled when the
+    /// [`TaskSet`] is cancelled, instead it will receive a notification via a
+    /// [`CancellationToken`]. This allows the future to complete gracefully.
+    /// This is useful for tasks that need to clean up resources before
+    /// completing.
+    ///
+    /// ## Panics
+    ///
+    /// This will panic if called outside the context of a Tokio runtime when
+    /// `self.handle` is `None`.
+    pub(crate) fn spawn_blocking_graceful<F, Fut>(&self, task: F) -> JoinHandle<Fut::Output>
+    where
+        F: FnOnce(WaitForCancellationFutureOwned) -> Fut + Send + 'static,
+        Fut: Future + Send + 'static,
+        Fut::Output: Send + 'static,
+    {
+        let h = self.handle();
+        let token = self.token.clone().cancelled_owned();
+        let task = task(token);
         self.tasks
             .spawn_blocking_on(move || h.block_on(task), &self.handle())
     }
