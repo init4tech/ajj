@@ -5,8 +5,9 @@ use crate::{
 };
 use core::fmt;
 use serde_json::value::RawValue;
-use tokio::{select, sync::mpsc, task::JoinHandle};
+use tokio::{pin, select, sync::mpsc, task::JoinHandle};
 use tokio_stream::StreamExt;
+use tokio_util::sync::WaitForCancellationFutureOwned;
 use tracing::{debug, debug_span, error, instrument, trace, Instrument};
 
 /// Default notification buffer size per task.
@@ -163,7 +164,7 @@ where
     /// to handle the request, and given a sender to the [`WriteTask`]. This
     /// ensures that requests can be handled concurrently.
     #[instrument(name = "RouteTask", skip(self), fields(conn_id = self.conn_id))]
-    pub async fn task_future(self) {
+    pub async fn task_future(self, cancel: WaitForCancellationFutureOwned) {
         let RouteTask {
             router,
             mut requests,
@@ -172,9 +173,18 @@ where
             ..
         } = self;
 
+        // The write task is responsible for waiting for its children
+        let children = tasks.child();
+
+        pin!(cancel);
+
         loop {
             select! {
                 biased;
+                _ = &mut cancel => {
+                    debug!("RouteTask cancelled");
+                    break;
+                }
                 _ = write_task.closed() => {
                     debug!("WriteTask has gone away");
                     break;
@@ -195,7 +205,7 @@ where
                     let ctx =
                     HandlerCtx::new(
                         Some(write_task.clone()),
-                        tasks.clone(),
+                        children.clone(),
                     );
 
                     let fut = router.handle_request_batch(ctx, reqs);
@@ -211,7 +221,7 @@ where
                     };
 
                     // Run the future in a new task.
-                    tasks.spawn_cancellable(
+                    children.spawn_cancellable(
                         async move {
                             // Send the response to the write task.
                             // we don't care if the receiver has gone away,
@@ -227,16 +237,16 @@ where
                 }
             }
         }
-        tasks.shutdown().await;
+        children.shutdown().await;
     }
 
     /// Spawn the future produced by [`Self::task_future`].
-    pub(crate) fn spawn(self) -> tokio::task::JoinHandle<Option<()>> {
+    pub(crate) fn spawn(self) -> tokio::task::JoinHandle<()> {
         let tasks = self.tasks.clone();
 
-        let future = self.task_future();
+        let future = move |cancel| self.task_future(cancel);
 
-        tasks.spawn_cancellable(future)
+        tasks.spawn_graceful(future)
     }
 }
 
@@ -296,7 +306,6 @@ impl<T: Listener> WriteTask<T> {
                 }
             }
         }
-        tasks.shutdown().await;
     }
 
     /// Spawn the future produced by [`Self::task_future`].
