@@ -5,7 +5,7 @@ description = "Simple, modern, ergonomic JSON-RPC 2.0 router built with tower an
 keywords = ["json-rpc", "jsonrpc", "json"]
 categories = ["web-programming::http-server", "web-programming::websocket"]
 
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.81"
 authors = ["init4", "James Prestwich"]
@@ -31,7 +31,7 @@ tokio-stream = { version = "0.1.17", optional = true }
 
 # ipc
 interprocess = { version = "2.2.2", features = ["async", "tokio"], optional = true }
-tokio-util = { version = "0.7.13", optional = true, features = ["io"] }
+tokio-util = { version = "0.7.13", optional = true, features = ["io", "rt"] }
 
 # ws
 tokio-tungstenite = { version = "0.26.1", features = ["rustls-tls-webpki-roots"], optional = true }

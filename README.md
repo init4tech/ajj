@@ -12,6 +12,8 @@ ajj aims to provide simple, flexible, and ergonomic routing for JSON-RPC.
 - Support for pubsub-style notifications.
 - Built-in support for axum, and tower's middleware and service ecosystem.
 - Basic built-in pubsub server implementations for WS and IPC.
+- Connection-oriented task management automatically cancels tasks on client
+  disconnect.
 
 ## Concepts
 

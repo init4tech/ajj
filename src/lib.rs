@@ -152,6 +152,9 @@ pub(crate) use routes::{BoxedIntoRoute, ErasedIntoRoute, Method, Route};
 mod router;
 pub use router::Router;
 
+mod tasks;
+pub(crate) use tasks::TaskSet;
+
 mod types;
 pub use types::{ErrorPayload, ResponsePayload};
 

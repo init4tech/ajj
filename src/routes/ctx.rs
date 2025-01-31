@@ -1,6 +1,9 @@
-use crate::{types::Request, RpcSend};
+use std::future::Future;
+
+use crate::{types::Request, RpcSend, TaskSet};
 use serde_json::value::RawValue;
-use tokio::sync::mpsc;
+use tokio::{runtime::Handle, sync::mpsc, task::JoinHandle};
+use tokio_util::sync::WaitForCancellationFutureOwned;
 use tracing::error;
 
 /// Errors that can occur when sending notifications.
@@ -15,36 +18,49 @@ pub enum NotifyError {
 }
 
 /// A context for handler requests that allow the handler to send notifications
-/// from long-running tasks (e.g. subscriptions).
+/// and spawn long-running tasks (e.g. subscriptions).
 ///
-/// This is primarily intended to enable subscriptions over pubsub transports
-/// to send notifications to clients. It is expected that JSON sent via the
-/// notification channel is a valid JSON-RPC 2.0 object.
+/// The handler is used for two things:
+/// - Spawning long-running tasks (e.g. subscriptions) via
+///   [`HandlerCtx::spawn`] or [`HandlerCtx::spawn_blocking`].
+/// - Sending notifications to pubsub clients via [`HandlerCtx::notify`].
+///   Notifcations SHOULD be valid JSON-RPC objects, but this is
+///   not enforced by the type system.
 #[derive(Debug, Clone, Default)]
 pub struct HandlerCtx {
     pub(crate) notifications: Option<mpsc::Sender<Box<RawValue>>>,
+
+    /// A task set on which to spawn tasks. This is used to coordinate
+    pub(crate) tasks: TaskSet,
 }
 
-impl From<mpsc::Sender<Box<RawValue>>> for HandlerCtx {
-    fn from(notifications: mpsc::Sender<Box<RawValue>>) -> Self {
+impl From<TaskSet> for HandlerCtx {
+    fn from(tasks: TaskSet) -> Self {
         Self {
-            notifications: Some(notifications),
+            notifications: None,
+            tasks,
+        }
+    }
+}
+
+impl From<Handle> for HandlerCtx {
+    fn from(handle: Handle) -> Self {
+        Self {
+            notifications: None,
+            tasks: handle.into(),
         }
     }
 }
 
 impl HandlerCtx {
-    /// Instantiate a new handler context.
-    pub const fn new() -> Self {
+    /// Create a new handler context.
+    pub(crate) const fn new(
+        notifications: Option<mpsc::Sender<Box<RawValue>>>,
+        tasks: TaskSet,
+    ) -> Self {
         Self {
-            notifications: None,
-        }
-    }
-
-    /// Instantiation a new handler context with notifications enabled.
-    pub const fn with_notifications(notifications: mpsc::Sender<Box<RawValue>>) -> Self {
-        Self {
-            notifications: Some(notifications),
+            notifications,
+            tasks,
         }
     }
 
@@ -72,6 +88,122 @@ impl HandlerCtx {
         }
 
         Ok(())
+    }
+
+    /// Spawn a task on the task set. This task will be cancelled if the
+    /// client disconnects. This is useful for long-running server tasks.
+    ///
+    /// The resulting [`JoinHandle`] will contain [`None`] if the task was
+    /// cancelled, and `Some` otherwise.
+    pub fn spawn<F>(&self, f: F) -> JoinHandle<Option<F::Output>>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        self.tasks.spawn_cancellable(f)
+    }
+
+    /// Spawn a task on the task set with access to this context. This
+    /// task will be cancelled if the client disconnects. This is useful
+    /// for long-running tasks like subscriptions.
+    ///
+    /// The resulting [`JoinHandle`] will contain [`None`] if the task was
+    /// cancelled, and `Some` otherwise.
+    pub fn spawn_with_ctx<F, Fut>(&self, f: F) -> JoinHandle<Option<Fut::Output>>
+    where
+        F: FnOnce(HandlerCtx) -> Fut,
+        Fut: Future + Send + 'static,
+        Fut::Output: Send + 'static,
+    {
+        self.tasks.spawn_cancellable(f(self.clone()))
+    }
+
+    /// Spawn a task that may block on the task set. This task may block, and
+    /// will be cancelled if the client disconnects. This is useful for
+    /// running expensive tasks that require blocking IO (e.g. database
+    /// queries).
+    ///
+    /// The resulting [`JoinHandle`] will contain [`None`] if the task was
+    /// cancelled, and `Some` otherwise.
+    pub fn spawn_blocking<F>(&self, f: F) -> JoinHandle<Option<F::Output>>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        self.tasks.spawn_blocking_cancellable(f)
+    }
+
+    /// Spawn a task that may block on the task set, with access to this
+    /// context. This task may block, and will be cancelled if the client
+    /// disconnects. This is useful for running expensive tasks that require
+    /// blocking IO (e.g. database queries).
+    ///
+    /// The resulting [`JoinHandle`] will contain [`None`] if the task was
+    /// cancelled, and `Some` otherwise.
+    pub fn spawn_blocking_with_ctx<F, Fut>(&self, f: F) -> JoinHandle<Option<Fut::Output>>
+    where
+        F: FnOnce(HandlerCtx) -> Fut,
+        Fut: Future + Send + 'static,
+        Fut::Output: Send + 'static,
+    {
+        self.tasks.spawn_blocking_cancellable(f(self.clone()))
+    }
+
+    /// Spawn a task on this task set. Unlike [`Self::spawn`], this task will
+    /// NOT be cancelled if the client disconnects. Instead, it
+    /// is given a future that resolves when client disconnects. This is useful
+    /// for tasks that need to clean up resources before completing.
+    pub fn spawn_graceful<F, Fut>(&self, f: F) -> JoinHandle<Fut::Output>
+    where
+        F: FnOnce(WaitForCancellationFutureOwned) -> Fut + Send + 'static,
+        Fut: Future + Send + 'static,
+        Fut::Output: Send + 'static,
+    {
+        self.tasks.spawn_graceful(f)
+    }
+
+    /// Spawn a task on this task set with access to this context. Unlike
+    /// [`Self::spawn`], this task will NOT be cancelled if the client
+    /// disconnects. Instead, it is given a future that resolves when client
+    /// disconnects. This is useful for tasks that need to clean up resources
+    /// before completing.
+    pub fn spawn_graceful_with_ctx<F, Fut>(&self, f: F) -> JoinHandle<Fut::Output>
+    where
+        F: FnOnce(HandlerCtx, WaitForCancellationFutureOwned) -> Fut + Send + 'static,
+        Fut: Future + Send + 'static,
+        Fut::Output: Send + 'static,
+    {
+        let ctx = self.clone();
+        self.tasks.spawn_graceful(move |token| f(ctx, token))
+    }
+
+    /// Spawn a blocking task on this task set. Unlike [`Self::spawn_blocking`],
+    /// this task will NOT be cancelled if the client disconnects. Instead, it
+    /// is given a future that resolves when client disconnects. This is useful
+    /// for tasks that need to clean up resources before completing.
+    pub fn spawn_blocking_graceful<F, Fut>(&self, f: F) -> JoinHandle<Fut::Output>
+    where
+        F: FnOnce(WaitForCancellationFutureOwned) -> Fut + Send + 'static,
+        Fut: Future + Send + 'static,
+        Fut::Output: Send + 'static,
+    {
+        self.tasks.spawn_blocking_graceful(f)
+    }
+
+    /// Spawn a blocking task on this task set with access to this context.
+    /// Unlike [`Self::spawn_blocking`], this task will NOT be cancelled if the
+    /// client disconnects. Instead, it is given a future that resolves when
+    /// the client disconnects. This is useful for tasks that need to clean up
+    /// resources before completing.
+    pub fn spawn_blocking_graceful_with_ctx<F, Fut>(&self, f: F) -> JoinHandle<Fut::Output>
+    where
+        F: FnOnce(HandlerCtx, WaitForCancellationFutureOwned) -> Fut + Send + 'static,
+        Fut: Future + Send + 'static,
+        Fut::Output: Send + 'static,
+    {
+        let ctx = self.clone();
+        self.tasks
+            .spawn_blocking_graceful(move |token| f(ctx, token))
     }
 }
 

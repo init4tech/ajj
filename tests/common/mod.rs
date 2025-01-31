@@ -13,7 +13,7 @@ pub fn test_router() -> ajj::Router<()> {
             |params: usize| async move { Ok::<_, ()>(params * 2) },
         )
         .route("call_me_later", |ctx: HandlerCtx| async move {
-            tokio::task::spawn(async move {
+            ctx.spawn_with_ctx(|ctx| async move {
                 time::sleep(time::Duration::from_millis(100)).await;
 
                 let _ = ctx
