@@ -1,14 +1,12 @@
-use core::fmt;
-
 use crate::{
     pubsub::{In, JsonSink, Listener, Out},
     types::InboundData,
     HandlerCtx, TaskSet,
 };
+use core::fmt;
 use serde_json::value::RawValue;
 use tokio::{select, sync::mpsc, task::JoinHandle};
 use tokio_stream::StreamExt;
-use tokio_util::task::task_tracker::TaskTrackerWaitFuture;
 use tracing::{debug, debug_span, error, instrument, trace, Instrument};
 
 /// Default notification buffer size per task.
@@ -16,52 +14,6 @@ pub const DEFAULT_NOTIFICATION_BUFFER_PER_CLIENT: usize = 16;
 
 /// Type alias for identifying connections.
 pub type ConnectionId = u64;
-
-/// Holds the shutdown signal for some server.
-#[derive(Debug)]
-pub struct ServerShutdown {
-    pub(crate) task_set: TaskSet,
-}
-
-impl From<TaskSet> for ServerShutdown {
-    fn from(task_set: TaskSet) -> Self {
-        Self::new(task_set)
-    }
-}
-
-impl ServerShutdown {
-    /// Create a new `ServerShutdown` with the given shutdown signal and task
-    /// set.
-    pub(crate) const fn new(task_set: TaskSet) -> Self {
-        Self { task_set }
-    }
-
-    /// Wait for the tasks spawned by the server to complete.
-    ///
-    /// This future will not resolve until both of the following are true:
-    /// - [`ServerShutdown::close`]
-    pub fn wait(&self) -> TaskTrackerWaitFuture<'_> {
-        self.task_set.wait()
-    }
-
-    /// Close the task tracker, allowing [`Self::wait`] futures to resolve.
-    pub fn close(&self) {
-        self.task_set.close();
-    }
-
-    /// Shutdown the server, and wait for all tasks to complete.
-    pub async fn shutdown(self) {
-        self.task_set.cancel();
-        self.close();
-        self.wait().await;
-    }
-}
-
-impl Drop for ServerShutdown {
-    fn drop(&mut self) {
-        self.task_set.cancel();
-    }
-}
 
 /// The `ListenerTask` listens for new connections, and spawns `RouteTask`s for
 /// each.
@@ -313,6 +265,8 @@ impl<T: Listener> WriteTask<T> {
     /// channel, and acts on them. It handles JSON messages, and going away
     /// instructions. It also listens for the global shutdown signal from the
     /// [`ServerShutdown`] struct.
+    ///
+    /// [`ServerShutdown`]: crate::pubsub::ServerShutdown
     #[instrument(skip(self), fields(conn_id = self.conn_id))]
     pub(crate) async fn task_future(self) {
         let WriteTask {

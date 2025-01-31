@@ -51,9 +51,24 @@ impl TaskSet {
         self.close();
     }
 
+    /// True if the token is cancelled.
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.token.is_cancelled()
+    }
+
+    /// Get a future that resolves when the token is fired.
+    pub(crate) fn cancelled(&self) -> WaitForCancellationFuture<'_> {
+        self.token.cancelled()
+    }
+
     /// Close the task tracker, allowing [`Self::wait`] futures to resolve.
     pub(crate) fn close(&self) {
         self.tasks.close();
+    }
+
+    /// True if the task set is closed.
+    pub(crate) fn is_closed(&self) -> bool {
+        self.tasks.is_closed()
     }
 
     /// Get a future that resolves when all tasks in the set are complete.
@@ -61,14 +76,12 @@ impl TaskSet {
         self.tasks.wait()
     }
 
+    /// Shutdown the task set. This will cancel all tasks and wait for them to
+    /// complete.
     pub(crate) async fn shutdown(&self) {
         self.cancel();
+        self.close();
         self.tasks.wait().await
-    }
-
-    /// Get a future that resolves when the token is fired.
-    pub(crate) fn cancelled(&self) -> WaitForCancellationFuture<'_> {
-        self.token.cancelled()
     }
 
     /// Get a child [`TaskSet`]. This set will be fired when the parent

@@ -95,7 +95,10 @@ mod ipc;
 pub use ipc::ReadJsonStream;
 
 mod shared;
-pub use shared::{ConnectionId, ServerShutdown, DEFAULT_NOTIFICATION_BUFFER_PER_CLIENT};
+pub use shared::{ConnectionId, DEFAULT_NOTIFICATION_BUFFER_PER_CLIENT};
+
+mod shutdown;
+pub use shutdown::ServerShutdown;
 
 mod r#trait;
 pub use r#trait::{Connect, In, JsonReqStream, JsonSink, Listener, Out};
