@@ -2,7 +2,11 @@ use crate::{
     types::{InboundData, Response},
     HandlerCtx, TaskSet,
 };
-use axum::{extract::FromRequest, response::IntoResponse};
+use axum::{
+    extract::FromRequest,
+    http::{header, HeaderValue},
+    response::IntoResponse,
+};
 use bytes::Bytes;
 use std::{future::Future, pin::Pin};
 use tokio::runtime::Handle;
@@ -66,7 +70,12 @@ where
                 .call_batch_with_state(self.ctx(), req, state)
                 .await
             {
-                Box::<str>::from(response).into_response()
+                let headers = [(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_static(mime::APPLICATION_JSON.as_ref()),
+                )];
+                let body = Box::<str>::from(response);
+                (headers, body).into_response()
             } else {
                 ().into_response()
             }
