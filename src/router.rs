@@ -320,7 +320,7 @@ where
 
         for (batch_idx, req) in inbound.iter().enumerate() {
             let req = req.map(|req| {
-                let span = debug_span!("RouteFuture::poll", batch_idx, method = req.method(), id = ?req.id());
+                let span = debug_span!(parent: &span, "RouteFuture::poll", batch_idx, method = req.method(), id = ?req.id());
                 let args = HandlerArgs::new(ctx.clone(), req);
                 self.inner
                     .call_with_state(args, state.clone())
