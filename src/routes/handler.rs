@@ -3,6 +3,7 @@ use crate::{
 };
 use serde_json::value::RawValue;
 use std::{convert::Infallible, future::Future, marker::PhantomData, pin::Pin, task};
+use tracing::{debug_span, enabled, trace, Instrument, Level};
 
 macro_rules! convert_result {
     ($res:expr) => {{
@@ -410,7 +411,27 @@ where
 
     fn call(&mut self, args: HandlerArgs) -> Self::Future {
         let this = self.clone();
-        Box::pin(async move { Ok(this.handler.call_with_state(args, this.state.clone()).await) })
+        Box::pin(async move {
+            let notifications_enabled = args.ctx.notifications_enabled();
+
+            let span = debug_span!(
+                "HandlerService::call",
+                notifications_enabled,
+                params = tracing::field::Empty
+            );
+            if enabled!(Level::TRACE) {
+                span.record("params", args.req.params());
+            }
+
+            Ok(this
+                .handler
+                .call_with_state(args, this.state.clone())
+                .instrument(span)
+                .await
+                .inspect(|res| {
+                    trace!(?res, "handler response");
+                }))
+        })
     }
 }
 

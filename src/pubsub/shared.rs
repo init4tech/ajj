@@ -8,7 +8,7 @@ use serde_json::value::RawValue;
 use tokio::{pin, select, sync::mpsc, task::JoinHandle};
 use tokio_stream::StreamExt;
 use tokio_util::sync::WaitForCancellationFutureOwned;
-use tracing::{debug, debug_span, error, instrument, trace, Instrument};
+use tracing::{debug, debug_span, error, trace, Instrument};
 
 /// Default notification buffer size per task.
 pub const DEFAULT_NOTIFICATION_BUFFER_PER_CLIENT: usize = 16;
@@ -163,8 +163,7 @@ where
     /// and routes them to the router. For each request, a new task is spawned
     /// to handle the request, and given a sender to the [`WriteTask`]. This
     /// ensures that requests can be handled concurrently.
-    #[instrument(name = "RouteTask", skip(self), fields(conn_id = self.conn_id))]
-    pub async fn task_future(self, cancel: WaitForCancellationFutureOwned) {
+    pub(crate) async fn task_future(self, cancel: WaitForCancellationFutureOwned) {
         let RouteTask {
             router,
             mut requests,
@@ -200,7 +199,14 @@ where
                     // enforces the specification.
                     let reqs = InboundData::try_from(item).unwrap_or_default();
 
-                    let span = debug_span!("pubsub request handling", reqs = reqs.len());
+                    // Acquiring the permit before spawning the task means that
+                    // the write task can backpressure the route task. I.e.
+                    // if the client stops accepting responses, we do not keep
+                    // handling inbound requests.
+                    let Ok(permit) = write_task.clone().reserve_owned().await else {
+                        tracing::error!("write task dropped while waiting for permit");
+                        break;
+                    };
 
                     let ctx =
                     HandlerCtx::new(
@@ -208,19 +214,9 @@ where
                         children.clone(),
                     );
 
-                    let fut = router.handle_request_batch(ctx, reqs);
-                    let write_task = write_task.clone();
-
-                    // Acquiring the permit before spawning the task means that
-                    // the write task can backpressure the route task. I.e.
-                    // if the client stops accepting responses, we do not keep
-                    // handling inbound requests.
-                    let Ok(permit) = write_task.reserve_owned().await else {
-                        tracing::error!("write task dropped while waiting for permit");
-                        break;
-                    };
-
                     // Run the future in a new task.
+                    let fut = router.handle_request_batch(ctx, reqs);
+
                     children.spawn_cancellable(
                         async move {
                             // Send the response to the write task.
@@ -232,7 +228,6 @@ where
                                 );
                             }
                         }
-                        .instrument(span)
                     );
                 }
             }
@@ -277,7 +272,6 @@ impl<T: Listener> WriteTask<T> {
     /// [`ServerShutdown`] struct.
     ///
     /// [`ServerShutdown`]: crate::pubsub::ServerShutdown
-    #[instrument(skip(self), fields(conn_id = self.conn_id))]
     pub(crate) async fn task_future(self) {
         let WriteTask {
             tasks,
@@ -299,8 +293,9 @@ impl<T: Listener> WriteTask<T> {
                         tracing::error!("Json stream has closed");
                         break;
                     };
-                    if let Err(err) = connection.send_json(json).await {
-                        debug!(%err, "Failed to send json");
+                    let span = debug_span!("WriteTask", conn_id = self.conn_id);
+                    if let Err(err) = connection.send_json(json).instrument(span).await {
+                        debug!(%err, conn_id = self.conn_id, "Failed to send json");
                         break;
                     }
                 }

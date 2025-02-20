@@ -3,6 +3,7 @@ use bytes::Bytes;
 use serde::Deserialize;
 use serde_json::value::RawValue;
 use std::ops::Range;
+use tracing::{debug, enabled, instrument, Level};
 
 /// UTF-8, partially deserialized JSON-RPC request batch.
 #[derive(Default)]
@@ -52,7 +53,13 @@ impl core::fmt::Debug for InboundData {
 impl TryFrom<Bytes> for InboundData {
     type Error = RequestError;
 
+    #[instrument(level = "debug", skip(bytes), fields(buf_len = bytes.len(), bytes = tracing::field::Empty))]
     fn try_from(bytes: Bytes) -> Result<Self, Self::Error> {
+        if enabled!(Level::TRACE) {
+            tracing::span::Span::current().record("bytes", &format!("0x{:x}", bytes));
+        }
+        debug!("Parsing inbound data");
+
         // Special-case a single request, rejecting invalid JSON.
         if bytes.starts_with(b"{") {
             let rv: &RawValue = serde_json::from_slice(bytes.as_ref())?;
