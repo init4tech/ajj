@@ -56,7 +56,7 @@ impl TryFrom<Bytes> for InboundData {
     #[instrument(level = "debug", skip(bytes), fields(buf_len = bytes.len(), bytes = tracing::field::Empty))]
     fn try_from(bytes: Bytes) -> Result<Self, Self::Error> {
         if enabled!(Level::TRACE) {
-            tracing::span::Span::current().record("bytes", &format!("0x{:x}", bytes));
+            tracing::span::Span::current().record("bytes", format!("0x{:x}", bytes));
         }
         debug!("Parsing inbound data");
 
