@@ -316,7 +316,7 @@ where
         let mut fut = BatchFuture::new_with_capacity(inbound.single(), inbound.len());
         // According to spec, non-parsable requests should still receive a
         // response.
-        let span = debug_span!(parent: None, "BatchFuture::poll", futs = fut.len());
+        let span = debug_span!(parent: None, "BatchFuture::poll", reqs = inbound.len(), futs = tracing::field::Empty);
 
         for (batch_idx, req) in inbound.iter().enumerate() {
             let req = req.map(|req| {
@@ -328,6 +328,7 @@ where
             });
             fut.push_parse_result(req);
         }
+        span.record("futs", fut.len());
         fut.with_span(span)
     }
 
