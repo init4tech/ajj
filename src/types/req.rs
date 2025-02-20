@@ -183,7 +183,7 @@ impl Request {
     pub fn deser_params<'a: 'de, 'de, T: serde::Deserialize<'de>>(
         &'a self,
     ) -> serde_json::Result<T> {
-        serde_json::from_str(self.params())
+        serde_json::from_str(self.params()).inspect_err(|err| tracing::debug!(%err, expected = std::any::type_name::<T>(), "failed to parse params"))
     }
 }
 

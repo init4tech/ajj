@@ -10,7 +10,7 @@ use core::fmt;
 use serde_json::value::RawValue;
 use std::{borrow::Cow, collections::BTreeMap, convert::Infallible, sync::Arc, task::Poll};
 use tower::Service;
-use tracing::{debug_span, trace};
+use tracing::debug_span;
 
 /// A JSON-RPC router. This is the top-level type for handling JSON-RPC
 /// requests. It is heavily inspired by the [`axum::Router`] type.
@@ -301,9 +301,7 @@ where
     pub fn call_with_state(&self, args: HandlerArgs, state: S) -> RouteFuture {
         let id = args.req().id_owned();
         let method = args.req().method();
-
-        let span = debug_span!("Router::call_with_state", %method, ?id);
-        trace!(params = args.req().params());
+        let span = debug_span!(parent: None, "Router::call_with_state", %method, ?id);
 
         self.inner.call_with_state(args, state).with_span(span)
     }
@@ -318,14 +316,19 @@ where
         let mut fut = BatchFuture::new_with_capacity(inbound.single(), inbound.len());
         // According to spec, non-parsable requests should still receive a
         // response.
-        for req in inbound.iter() {
+        let span = debug_span!(parent: None, "BatchFuture::poll", futs = fut.len());
+
+        for (batch_idx, req) in inbound.iter().enumerate() {
             let req = req.map(|req| {
+                let span = debug_span!("RouteFuture::poll", batch_idx, method = req.method(), id = ?req.id());
                 let args = HandlerArgs::new(ctx.clone(), req);
-                self.call_with_state(args, state.clone())
+                self.inner
+                    .call_with_state(args, state.clone())
+                    .with_span(span)
             });
             fut.push_parse_result(req);
         }
-        fut
+        fut.with_span(span)
     }
 
     /// Nest this router into a new Axum router, with the specified path and the currently-running

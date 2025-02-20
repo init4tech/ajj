@@ -20,6 +20,7 @@ use std::{
     task::{Context, Poll},
 };
 use tower::{util::BoxCloneSyncService, Service, ServiceExt};
+use tracing::{debug_span, enabled, Level};
 
 use crate::types::Response;
 
@@ -95,6 +96,14 @@ impl Service<HandlerArgs> for Route {
     }
 
     fn call(&mut self, args: HandlerArgs) -> Self::Future {
+        let span = debug_span!(
+            "Route::call",
+            notifications_enabled = args.ctx().notifications_enabled(),
+            params = tracing::field::Empty,
+        );
+        if enabled!(Level::TRACE) {
+            span.record("params", args.req.params());
+        }
         self.oneshot_inner(args)
     }
 }

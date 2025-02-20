@@ -118,6 +118,9 @@ pub struct BatchFuture {
     resps: Vec<Box<RawValue>>,
     /// Whether the batch was a single request.
     single: bool,
+
+    /// The span (if any).
+    span: Option<tracing::Span>,
 }
 
 impl fmt::Debug for BatchFuture {
@@ -136,6 +139,15 @@ impl BatchFuture {
             futs: BatchFutureInner::Prepping(Vec::with_capacity(capacity)),
             resps: Vec::with_capacity(capacity),
             single,
+            span: None,
+        }
+    }
+
+    /// Set the span for the future.
+    pub(crate) fn with_span(self, span: tracing::Span) -> Self {
+        Self {
+            span: Some(span),
+            ..self
         }
     }
 
@@ -167,6 +179,11 @@ impl BatchFuture {
             Err(_) => self.push_parse_error(),
         }
     }
+
+    /// Get the number of futures in the batch.
+    pub(crate) fn len(&self) -> usize {
+        self.futs.len()
+    }
 }
 
 impl std::future::Future for BatchFuture {
@@ -185,6 +202,8 @@ impl std::future::Future for BatchFuture {
         }
 
         let this = self.project();
+        let _enter = this.span.as_ref().map(tracing::Span::enter);
+
         let BatchFutureInnerProj::Running(mut futs) = this.futs.project() else {
             unreachable!()
         };
