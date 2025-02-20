@@ -2,6 +2,7 @@ use crate::types::{RequestError, ID_LEN_LIMIT, METHOD_LEN_LIMIT};
 use bytes::Bytes;
 use serde_json::value::RawValue;
 use std::ops::Range;
+use tracing::trace;
 
 /// Utf8 payload, partially deserialized
 #[derive(Clone)]
@@ -183,7 +184,9 @@ impl Request {
     pub fn deser_params<'a: 'de, 'de, T: serde::Deserialize<'de>>(
         &'a self,
     ) -> serde_json::Result<T> {
-        serde_json::from_str(self.params()).inspect_err(|err| tracing::debug!(%err, expected = std::any::type_name::<T>(), "failed to parse params"))
+        serde_json::from_str(self.params()).inspect_err(
+            |err| trace!(%err, expected = std::any::type_name::<T>(), "failed to parse params"),
+        )
     }
 }
 
