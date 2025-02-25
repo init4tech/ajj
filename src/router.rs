@@ -112,7 +112,9 @@ where
 
     /// Add state to the router, readying methods that require that state.
     ///
-    /// Note that the type parameter `S2` is NOT the state you are adding to the
+    /// ## Note
+    ///
+    /// The type parameter `S2` is NOT the state you are adding to the
     /// router. It is additional state that must be added AFTER the state `S`.
     pub fn with_state<S2>(self, state: S) -> Router<S2> {
         map_inner!(self, inner => inner.with_state(&state))
@@ -224,6 +226,15 @@ where
     {
         tap_inner!(self, mut this => {
             this = this.route(method, handler);
+        })
+    }
+
+    /// Remove a method from the router.
+    ///
+    /// If the route does not exist, this method is a no-op.
+    pub fn remove_route(self, method: impl Into<Cow<'static, str>>) -> Self {
+        tap_inner!(self, mut this => {
+            this = this.remove_route(method.into());
         })
     }
 
@@ -346,7 +357,6 @@ where
     ///
     /// This method allows users to specify a runtime handle for the router to
     /// use. This runtime is accessible to all handlers invoked by the router.
-    /// Handlers.
     ///
     /// Tasks spawned by the router will be spawned on the provided runtime,
     /// and automatically cancelled when the returned `axum::Router` is dropped.
@@ -514,7 +524,11 @@ impl<S> RouterInner<S> {
         Ok(id)
     }
 
-    /// Enroll a method name, returning an ID assignment. Panics if the method
+    /// Enroll a method name, returning an ID assignment.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the method
     /// name already exists in the router.
     fn enroll_method(
         &mut self,
@@ -564,6 +578,19 @@ impl<S> RouterInner<S> {
         S: Clone + Send + Sync + 'static,
     {
         self.route_erased(method, MakeErasedHandler::from_handler(handler))
+    }
+
+    /// Remove a method from the router.
+    ///
+    /// If the route does not exist, this method is a no-op.
+    pub(crate) fn remove_route(mut self, method: Cow<'static, str>) -> Self {
+        if let Some(id) = self.name_to_id.remove(&method) {
+            self.id_to_name.remove(&id);
+            self.routes.remove(&id);
+            self
+        } else {
+            self
+        }
     }
 
     /// Call a method on the router, with the provided state.
