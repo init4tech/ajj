@@ -346,10 +346,10 @@ where
     ///
     /// This method allows users to specify a runtime handle for the router to
     /// use. This runtime is accessible to all handlers invoked by the router.
-    /// Handlers.
     ///
     /// Tasks spawned by the router will be spawned on the provided runtime,
     /// and automatically cancelled when the returned `axum::Router` is dropped.
+    #[cfg(feature = "axum")]
     pub fn into_axum_with_handle(
         self,
         path: &str,
