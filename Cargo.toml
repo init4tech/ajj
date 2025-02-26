@@ -20,23 +20,23 @@ serde = { version = "1.0.217", features = ["derive"] }
 serde_json = { version = "1.0.135", features = ["raw_value"] }
 thiserror = "2.0.9"
 tokio = { version = "1.43.0", features = ["sync", "rt", "macros"] }
+tokio-util = { version = "0.7.13", features = ["io", "rt"] }
 tower = { version = "0.5.2", features = ["util"] }
 tracing = "0.1.41"
 
 # axum
 axum = { version = "0.8.1", optional = true }
+mime = { version = "0.3.17", optional = true}
 
 # pubsub
 tokio-stream = { version = "0.1.17", optional = true }
 
 # ipc
 interprocess = { version = "2.2.2", features = ["async", "tokio"], optional = true }
-tokio-util = { version = "0.7.13", optional = true, features = ["io", "rt"] }
 
 # ws
 tokio-tungstenite = { version = "0.26.1", features = ["rustls-tls-webpki-roots"], optional = true }
 futures-util = { version = "0.3.31", optional = true }
-mime = "0.3.17"
 
 [dev-dependencies]
 tempfile = "3.15.0"
@@ -44,11 +44,10 @@ tracing-subscriber = "0.3.19"
 
 [features]
 default = ["axum", "ws", "ipc"]
-axum = ["dep:axum"]
+axum = ["dep:axum", "dep:mime"]
 pubsub = ["dep:tokio-stream"]
-ipc = ["pubsub", "dep:tokio-util", "dep:interprocess"]
+ipc = ["pubsub", "dep:interprocess"]
 ws = ["pubsub", "dep:tokio-tungstenite", "dep:futures-util"]
-tokio-util = ["dep:tokio-util"]
 
 [profile.release]
 opt-level = 3

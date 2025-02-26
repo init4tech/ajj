@@ -120,8 +120,8 @@ pub struct PhantomParams<T>(PhantomData<T>);
 ///
 /// 1. The handler takes EITHER `params` or `state`.
 /// 2. The `S` type of the router would also be a valid `Params` type (i.e. it
-///   impls [`DeserializeOwned`] and satisfies the other
-///   requirements of [`RpcRecv`]).
+///    impls [`DeserializeOwned`] and satisfies the other
+///    requirements of [`RpcRecv`]).
 /// 3. The argument to the handler matches the `S` type of the router.
 ///
 /// ```compile_fail

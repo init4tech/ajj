@@ -1,7 +1,6 @@
-use std::future::Future;
-
 use crate::{types::Request, RpcSend, TaskSet};
 use serde_json::value::RawValue;
+use std::future::Future;
 use tokio::{runtime::Handle, sync::mpsc, task::JoinHandle};
 use tokio_util::sync::WaitForCancellationFutureOwned;
 use tracing::error;
@@ -54,6 +53,7 @@ impl From<Handle> for HandlerCtx {
 
 impl HandlerCtx {
     /// Create a new handler context.
+    #[allow(dead_code)] // used in pubsub and axum features
     pub(crate) const fn new(
         notifications: Option<mpsc::Sender<Box<RawValue>>>,
         tasks: TaskSet,

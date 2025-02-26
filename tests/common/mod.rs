@@ -1,7 +1,6 @@
-use std::time::Duration;
-
 use ajj::{HandlerCtx, Router};
 use serde_json::{json, Value};
+use std::time::Duration;
 use tokio::time::{self, timeout};
 
 /// Instantiate a router for testing.
