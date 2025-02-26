@@ -1,11 +1,12 @@
 name: Rust CI
-
 on:
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
+env:
+  CARGO_TERM_COLOR: always
 
-# simplest example of using the rust-base action
 jobs:
-  rust-base:
-    uses: init4tech/actions/.github/workflows/rust-base.yml@main
+  rust-library-base:
+    uses: init4tech/actions/.github/workflows/rust-library-base.yml@main
