@@ -1,3 +1,5 @@
+#![cfg(feature = "ws")]
+
 mod common;
 use common::{test_router, TestClient};
 

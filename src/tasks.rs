@@ -24,6 +24,7 @@ impl From<Handle> for TaskSet {
     }
 }
 
+#[allow(dead_code)] // used in pubsub and axum features
 impl TaskSet {
     /// Create a new [`TaskSet`] with a handle.
     pub(crate) fn with_handle(handle: Handle) -> Self {

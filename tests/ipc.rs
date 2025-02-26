@@ -1,3 +1,5 @@
+#![cfg(feature = "ipc")]
+
 mod common;
 use common::{test_router, TestClient};
 
