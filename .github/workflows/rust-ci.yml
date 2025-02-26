@@ -1,4 +1,4 @@
-name: Rust CI
+name: Rust Library CI
 on:
   workflow_dispatch:
   push:
