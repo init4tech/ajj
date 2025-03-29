@@ -25,7 +25,7 @@ tower = { version = "0.5.2", features = ["util"] }
 tracing = "0.1.41"
 
 # axum
-axum = { version = "0.8.1", optional = true, features = ["ws"] }
+axum = { version = "0.8.1", optional = true }
 mime = { version = "0.3.17", optional = true }
 
 # pubsub
@@ -46,7 +46,7 @@ axum = { version = "*", features = ["macros"] }
 [features]
 default = ["axum", "ws", "ipc"]
 axum = ["dep:axum", "dep:mime"]
-pubsub = ["dep:tokio-stream"]
+pubsub = ["dep:tokio-stream", "axum?/ws"]
 ipc = ["pubsub", "dep:interprocess"]
 ws = ["pubsub", "dep:tokio-tungstenite", "dep:futures-util"]
 
