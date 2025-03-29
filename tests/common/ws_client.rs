@@ -8,6 +8,7 @@ use tokio_tungstenite::{
 };
 
 /// Create a WebSocket client for testing.
+#[allow(dead_code)]
 pub async fn ws_client(s: &str) -> WsClient {
     let request = s.into_client_request().unwrap();
     let (socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
