@@ -26,7 +26,7 @@ async fn test_ws() {
     let _server = tokio::spawn(serve());
 
     // Give the server a moment to start
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
 
     let mut client = ws_client(URL).await;
     common::basic_tests(&mut client).await;
