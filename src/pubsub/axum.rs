@@ -50,12 +50,8 @@ impl Listener for AxumListener {
 
     type Error = Infallible;
 
-    fn accept(
-        &self,
-    ) -> impl std::prelude::rust_2024::Future<
-        Output = Result<(Self::RespSink, Self::ReqStream), Self::Error>,
-    > + Send {
-        async { unreachable!() }
+    async fn accept(&self) -> Result<(Self::RespSink, Self::ReqStream), Self::Error> {
+        unreachable!()
     }
 }
 
@@ -65,7 +61,7 @@ impl Listener for AxumListener {
 /// - The runtime [`Handle`] on which to execute tasks, which can be set with
 ///   [`Self::with_handle`].
 /// - The notification buffer size per client, which can be set with
-///  [`Self::with_notification_buffer_per_client`]. See the [`crate::pubsub`]
+///   [`Self::with_notification_buffer_per_client`]. See the [`crate::pubsub`]
 ///   module documentation for more details.
 #[derive(Clone)]
 pub struct AxumWsCfg {

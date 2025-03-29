@@ -93,7 +93,7 @@ impl ConnectionManager {
     }
 
     /// Set the notification buffer size per task.
-    pub(crate) fn with_notification_buffer_per_client(
+    pub(crate) const fn with_notification_buffer_per_client(
         mut self,
         notification_buffer_per_client: usize,
     ) -> Self {
