@@ -86,10 +86,32 @@
 //! # }}
 //! ```
 //!
-//! For WS and IPC connections, the `pubsub` module provides implementations of
-//! the `Connect` trait for [`std::net::SocketAddr`] to create simple WS
-//! servers, and [`interprocess::local_socket::ListenerOptions`] to create
-//! simple IPC servers.
+//! Routers can also be served over axum websockets. When both `axum` and
+//! `pubsub` features are enabled, the `pubsub` module provides
+//! [`pubsub::AxumWsCfg`] and the [`pubsub::ajj_websocket`] axum handler. This
+//! handler will serve the router over websockets at a specific route.
+//!
+//! ```no_run
+//! # #[cfg(all(feature = "axum", feature = "pubsub"))]
+//! # use ajj::{Router, pubsub::{ajj_websocket, AxumWsCfg}};
+//! # use std::sync::Arc;
+//! # {
+//! # async fn _main(router: Router<()>, axum: axum::Router<AxumWsCfg>) -> axum::Router<()>{
+//! // The config object contains the tokio runtime handle, and the
+//! // notification buffer size.
+//! let cfg = AxumWsCfg::new(router);
+//!
+//! axum
+//!     .route("/ws", axum::routing::any(ajj_websocket))
+//!     .with_state(cfg)
+//! # }}
+//! ```
+//!
+//! For IPC and non-axum WebSocket connections, the `pubsub` module provides
+//! implementations of the `Connect` trait for [`std::net::SocketAddr`] to
+//! create simple WS servers, and
+//! [`interprocess::local_socket::ListenerOptions`] to create simple IPC
+//! servers.
 //!
 //! ```no_run
 //! # #[cfg(feature = "pubsub")]

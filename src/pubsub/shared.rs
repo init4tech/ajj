@@ -5,7 +5,8 @@ use crate::{
 };
 use core::fmt;
 use serde_json::value::RawValue;
-use tokio::{pin, select, sync::mpsc, task::JoinHandle};
+use std::sync::{atomic::AtomicU64, Arc};
+use tokio::{pin, runtime::Handle, select, sync::mpsc, task::JoinHandle};
 use tokio_stream::StreamExt;
 use tokio_util::sync::WaitForCancellationFutureOwned;
 use tracing::{debug, debug_span, error, trace, Instrument};
@@ -32,10 +33,7 @@ where
     /// This future is a simple loop that accepts new connections, and uses
     /// the [`ConnectionManager`] to handle them.
     pub(crate) async fn task_future(self) {
-        let ListenerTask {
-            listener,
-            mut manager,
-        } = self;
+        let ListenerTask { listener, manager } = self;
 
         loop {
             let (resp_sink, req_stream) = match listener.accept().await {
@@ -64,7 +62,7 @@ where
 pub(crate) struct ConnectionManager {
     pub(crate) root_tasks: TaskSet,
 
-    pub(crate) next_id: ConnectionId,
+    pub(crate) next_id: Arc<AtomicU64>,
 
     pub(crate) router: crate::Router<()>,
 
@@ -72,11 +70,41 @@ pub(crate) struct ConnectionManager {
 }
 
 impl ConnectionManager {
+    /// Create a new [`ConnectionManager`] with the given [`crate::Router`].
+    pub(crate) fn new(router: crate::Router<()>) -> Self {
+        Self {
+            root_tasks: Handle::current().into(),
+            next_id: AtomicU64::new(0).into(),
+            router,
+            notification_buffer_per_task: DEFAULT_NOTIFICATION_BUFFER_PER_CLIENT,
+        }
+    }
+
+    /// Set the root task set.
+    pub(crate) fn with_root_tasks(mut self, root_tasks: TaskSet) -> Self {
+        self.root_tasks = root_tasks;
+        self
+    }
+
+    /// Set the handle, overriding the root tasks.
+    pub(crate) fn with_handle(mut self, handle: Handle) -> Self {
+        self.root_tasks = handle.into();
+        self
+    }
+
+    /// Set the notification buffer size per task.
+    pub(crate) fn with_notification_buffer_per_client(
+        mut self,
+        notification_buffer_per_client: usize,
+    ) -> Self {
+        self.notification_buffer_per_task = notification_buffer_per_client;
+        self
+    }
+
     /// Increment the connection ID counter and return an unused ID.
-    fn next_id(&mut self) -> ConnectionId {
-        let id = self.next_id;
-        self.next_id += 1;
-        id
+    fn next_id(&self) -> ConnectionId {
+        self.next_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Get a clone of the router.
@@ -114,7 +142,7 @@ impl ConnectionManager {
     }
 
     /// Spawn a new [`RouteTask`] and [`WriteTask`] for a connection.
-    fn spawn_tasks<T: Listener>(&mut self, requests: In<T>, connection: Out<T>) {
+    fn spawn_tasks<T: Listener>(&self, requests: In<T>, connection: Out<T>) {
         let conn_id = self.next_id();
         let (rt, wt) = self.make_tasks::<T>(conn_id, requests, connection);
         rt.spawn();
@@ -123,7 +151,7 @@ impl ConnectionManager {
 
     /// Handle a new connection, enrolling it in the write task, and spawning
     /// its route task.
-    fn handle_new_connection<T: Listener>(&mut self, requests: In<T>, connection: Out<T>) {
+    pub(crate) fn handle_new_connection<T: Listener>(&self, requests: In<T>, connection: Out<T>) {
         self.spawn_tasks::<T>(requests, connection);
     }
 }
