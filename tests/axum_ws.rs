@@ -6,7 +6,6 @@ use common::{test_router, ws_client::ws_client};
 use ajj::pubsub::AxumWsCfg;
 use axum::routing::any;
 
-// const SOCKET: SocketAddr = SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 3399);
 const SOCKET_STR: &str = "127.0.0.1:3399";
 const URL: &str = "ws://127.0.0.1:3399";
 
