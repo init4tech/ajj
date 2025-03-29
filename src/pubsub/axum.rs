@@ -144,7 +144,7 @@ impl AxumWsCfg {
 ///     .with_state(cfg)
 /// # }}
 /// ```
-pub async fn ajj_websocket(ws: WebSocketUpgrade, State(state): State<Arc<AxumWsCfg>>) -> Response {
+pub async fn ajj_websocket(ws: WebSocketUpgrade, State(state): State<AxumWsCfg>) -> Response {
     ws.on_upgrade(move |ws| {
         let (sink, stream) = ws.split();
 
