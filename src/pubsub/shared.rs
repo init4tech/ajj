@@ -80,7 +80,8 @@ impl ConnectionManager {
         }
     }
 
-    /// Set the root task set.
+    /// Set the root task set. This should generally not be used after tasks
+    /// have been spawned.
     pub(crate) fn with_root_tasks(mut self, root_tasks: TaskSet) -> Self {
         self.root_tasks = root_tasks;
         self
@@ -89,7 +90,7 @@ impl ConnectionManager {
     /// Set the handle, overriding the root tasks. This should generally not be
     /// used after tasks have been spawned.
     pub(crate) fn with_handle(mut self, handle: Handle) -> Self {
-        self.root_tasks = handle.into();
+        self.root_tasks = self.root_tasks.with_handle(handle);
         self
     }
 
