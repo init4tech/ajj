@@ -348,7 +348,8 @@ where
     /// use. This runtime is accessible to all handlers invoked by the router.
     ///
     /// Tasks spawned by the router will be spawned on the provided runtime,
-    /// and automatically cancelled when the returned `axum::Router` is dropped.
+    /// and automatically cancelled when the returned [`axum::Router`] is
+    /// dropped.
     #[cfg(feature = "axum")]
     pub fn into_axum_with_handle(
         self,
@@ -373,6 +374,47 @@ impl Router<()> {
         connect: C,
     ) -> Result<crate::pubsub::ServerShutdown, C::Error> {
         connect.serve(self).await
+    }
+
+    /// Create an [`AxumWsCfg`] from this router. This is a convenience method
+    /// for `AxumWsCfg::new(self.clone())`.
+    ///
+    /// [`AxumWsCfg`]: crate::pubsub::AxumWsCfg
+    #[cfg(all(feature = "axum", feature = "pubsub"))]
+    pub fn to_axum_cfg(&self) -> crate::pubsub::AxumWsCfg {
+        crate::pubsub::AxumWsCfg::new(self.clone())
+    }
+
+    /// Create an [`axum::Router`] from this router, serving this router via
+    /// HTTP `POST` requests at `post_route` and via WebSocket at `ws_route`.
+    #[cfg(all(feature = "axum", feature = "pubsub"))]
+    pub fn into_axum_with_ws(self, post_route: &str, ws_route: &str) -> axum::Router<()> {
+        let cfg = self.to_axum_cfg();
+
+        self.into_axum(post_route)
+            .with_state(())
+            .route(ws_route, axum::routing::any(crate::pubsub::ajj_websocket))
+            .with_state(cfg)
+    }
+
+    /// Create an [`axum::Router`] from this router, serving this router via
+    /// HTTP `POST` requests at `post_route` and via WebSocket at `ws_route`.
+    /// This convenience method allows users to specify a runtime handle for the
+    /// router to use. See [`Router::into_axum_with_handle`] for more
+    /// information.
+    #[cfg(all(feature = "axum", feature = "pubsub"))]
+    pub fn into_axum_with_ws_and_handle(
+        self,
+        post_route: &str,
+        ws_route: &str,
+        handle: tokio::runtime::Handle,
+    ) -> axum::Router<()> {
+        let cfg = self.to_axum_cfg();
+
+        self.into_axum_with_handle(post_route, handle)
+            .with_state(())
+            .route(ws_route, axum::routing::any(crate::pubsub::ajj_websocket))
+            .with_state(cfg)
     }
 
     /// Call a method on the router.
