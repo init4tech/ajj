@@ -99,16 +99,16 @@ pub trait Connect: Send + Sync + Sized {
             let root_tasks: TaskSet = handle.into();
             let notification_buffer_per_task = self.notification_buffer_size();
 
+            let manager = ConnectionManager::new(router)
+                .with_root_tasks(root_tasks.clone())
+                .with_notification_buffer_per_client(notification_buffer_per_task);
+
             ListenerTask {
                 listener: self.make_listener().await?,
-                manager: ConnectionManager {
-                    next_id: 0,
-                    router,
-                    notification_buffer_per_task,
-                    root_tasks: root_tasks.clone(),
-                },
+                manager,
             }
             .spawn();
+
             Ok(root_tasks.into())
         }
     }

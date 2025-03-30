@@ -105,3 +105,8 @@ pub use r#trait::{Connect, In, JsonReqStream, JsonSink, Listener, Out};
 
 #[cfg(feature = "ws")]
 mod ws;
+
+#[cfg(feature = "axum")]
+mod axum;
+#[cfg(feature = "axum")]
+pub use axum::{ajj_websocket, AxumWsCfg};

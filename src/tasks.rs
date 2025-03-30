@@ -20,19 +20,27 @@ pub(crate) struct TaskSet {
 
 impl From<Handle> for TaskSet {
     fn from(handle: Handle) -> Self {
-        Self::with_handle(handle)
+        Self::from_handle(handle)
     }
 }
 
 #[allow(dead_code)] // used in pubsub and axum features
 impl TaskSet {
     /// Create a new [`TaskSet`] with a handle.
-    pub(crate) fn with_handle(handle: Handle) -> Self {
+    pub(crate) fn from_handle(handle: Handle) -> Self {
         Self {
             tasks: TaskTracker::new(),
             token: CancellationToken::new(),
             handle: Some(handle),
         }
+    }
+
+    /// Change the handle for the task set. This is used to spawn tasks on a
+    /// specific runtime.This should generally not be called after tasks have
+    /// been spawned.
+    pub(crate) fn with_handle(mut self, handle: Handle) -> Self {
+        self.handle = Some(handle);
+        self
     }
 
     /// Get a handle to the runtime that the task set is running on.
