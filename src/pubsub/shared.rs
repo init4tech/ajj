@@ -73,7 +73,7 @@ impl ConnectionManager {
     /// Create a new [`ConnectionManager`] with the given [`crate::Router`].
     pub(crate) fn new(router: crate::Router<()>) -> Self {
         Self {
-            root_tasks: Handle::current().into(),
+            root_tasks: Default::default(),
             next_id: AtomicU64::new(0).into(),
             router,
             notification_buffer_per_task: DEFAULT_NOTIFICATION_BUFFER_PER_CLIENT,
@@ -86,7 +86,8 @@ impl ConnectionManager {
         self
     }
 
-    /// Set the handle, overriding the root tasks.
+    /// Set the handle, overriding the root tasks. This should generally not be
+    /// used after tasks have been spawned.
     pub(crate) fn with_handle(mut self, handle: Handle) -> Self {
         self.root_tasks = handle.into();
         self

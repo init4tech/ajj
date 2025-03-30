@@ -89,7 +89,9 @@
 //! Routers can also be served over axum websockets. When both `axum` and
 //! `pubsub` features are enabled, the `pubsub` module provides
 //! [`pubsub::AxumWsCfg`] and the [`pubsub::ajj_websocket`] axum handler. This
-//! handler will serve the router over websockets at a specific route.
+//! handler will serve the router over websockets at a specific route. The
+//! router is a property of the `AxumWsCfg` object, and is passed to the
+//! handler via axum's `State` extractor.
 //!
 //! ```no_run
 //! # #[cfg(all(feature = "axum", feature = "pubsub"))]
@@ -110,7 +112,10 @@
 //! implementations of the `Connect` trait for [`std::net::SocketAddr`] to
 //! create simple WS servers, and
 //! [`interprocess::local_socket::ListenerOptions`] to create simple IPC
-//! servers.
+//! servers. We generally recommend using `axum` for WebSocket connections, as
+//! it provides a more complete and robust implementation, however, users
+//! needing additional control, or wanting to avoid the `axum` dependency
+//! can use the `pubsub` module directly.
 //!
 //! ```no_run
 //! # #[cfg(feature = "pubsub")]

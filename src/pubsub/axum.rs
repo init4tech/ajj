@@ -59,10 +59,34 @@ impl Listener for AxumListener {
 ///
 /// The main points of configuration are:
 /// - The runtime [`Handle`] on which to execute tasks, which can be set with
-///   [`Self::with_handle`].
+///   [`Self::with_handle`]. This defaults to the current thread's runtime
+///   handle.
 /// - The notification buffer size per client, which can be set with
 ///   [`Self::with_notification_buffer_per_client`]. See the [`crate::pubsub`]
 ///   module documentation for more details.
+///
+/// This struct is used as the [`State`] for the [`ajj_websocket`] handler, and
+/// should be created from a fully-configured [`Router<()>`].
+///
+/// # Note
+///
+/// If [`AxumWsCfg`] is NOT used within a `tokio` runtime,
+/// [`AxumWsCfg::with_handle`] MUST be called to set the runtime handle before
+/// any requests are routed. Attempting to execute a task without an active
+/// runtime will result in a panic.
+///
+/// # Example
+///
+/// ```no_run
+/// # #[cfg(all(feature = "axum", feature = "pubsub"))]
+/// # use ajj::{Router, pubsub::{ajj_websocket, AxumWsCfg}};
+/// # {
+/// # async fn _main(router: Router<()>, axum: axum::Router<AxumWsCfg>, handle: tokio::runtime::Handle) {
+/// let cfg = AxumWsCfg::from(router)
+///     .with_handle(handle)
+///     .with_notification_buffer_per_client(10);
+/// # }}
+/// ```
 #[derive(Clone)]
 pub struct AxumWsCfg {
     inner: Arc<ConnectionManager>,
@@ -113,7 +137,8 @@ impl AxumWsCfg {
         }
     }
 
-    /// Set the notification buffer size per client.
+    /// Set the notification buffer size per client. See the [`crate::pubsub`]
+    /// module documentation for more details.
     pub fn with_notification_buffer_per_client(
         self,
         notification_buffer_per_client: usize,
@@ -127,7 +152,15 @@ impl AxumWsCfg {
     }
 }
 
-/// Axum handler for WebSocket connections. Used to serve
+/// Axum handler for WebSocket connections.
+///
+/// Used to serve [`crate::Router`]s over WebSocket connections via [`axum`]'s
+/// built-in WebSocket support. This handler is used in conjunction with
+/// [`AxumWsCfg`], which is passed as the [`State`] to the handler.
+///
+/// # Examples
+///
+/// Basic usage:
 ///
 /// ```no_run
 /// # #[cfg(all(feature = "axum", feature = "pubsub"))]
@@ -141,6 +174,50 @@ impl AxumWsCfg {
 /// axum
 ///     .route("/ws", axum::routing::any(ajj_websocket))
 ///     .with_state(cfg)
+/// # }}
+/// ```
+///
+/// The [`Router`] is a property of the [`AxumWsCfg`]. This means it is not
+/// paramterized until the [`axum::Router::with_state`] method is called. This
+/// has two significant consequences:
+/// 1. You can easily register the same [`Router`] with multiple handlers.
+/// 2. In order to register a second [`Router`] you need a second [`AxumWsCfg`].
+///
+/// Registering the same [`Router`] with multiple handlers:
+///
+/// ```no_run
+/// # #[cfg(all(feature = "axum", feature = "pubsub"))]
+/// # use ajj::{Router, pubsub::{ajj_websocket, AxumWsCfg}};
+/// # {
+/// # async fn _main(router: Router<()>, axum: axum::Router<AxumWsCfg>) -> axum::Router<()>{
+/// // The config object contains the tokio runtime handle, and the
+/// // notification buffer size.
+/// let cfg = AxumWsCfg::new(router);
+///
+/// axum
+///     .route("/ws", axum::routing::any(ajj_websocket))
+///     .route("/super-secret-ws", axum::routing::any(ajj_websocket))
+///     .with_state(cfg)
+/// # }}
+/// ```
+///
+/// Registering a second [`Router`] at a different path:
+///
+/// ```no_run
+/// # #[cfg(all(feature = "axum", feature = "pubsub"))]
+/// # use ajj::{Router, pubsub::{ajj_websocket, AxumWsCfg}};
+/// # {
+/// # async fn _main(router: Router<()>, other_router: Router<()>, axum: axum::Router<AxumWsCfg>) -> axum::Router<()>{
+/// // The config object contains the tokio runtime handle, and the
+/// // notification buffer size.
+/// let cfg = AxumWsCfg::new(router);
+/// let other_cfg = AxumWsCfg::new(other_router);
+///
+/// axum
+///     .route("/really-cool-ws-1", axum::routing::any(ajj_websocket))
+///     .with_state(cfg)
+///     .route("/even-cooler-ws-2", axum::routing::any(ajj_websocket))
+///     .with_state(other_cfg)
 /// # }}
 /// ```
 pub async fn ajj_websocket(ws: WebSocketUpgrade, State(state): State<AxumWsCfg>) -> Response {
