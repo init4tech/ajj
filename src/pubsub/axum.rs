@@ -132,7 +132,6 @@ impl AxumWsCfg {
 /// ```no_run
 /// # #[cfg(all(feature = "axum", feature = "pubsub"))]
 /// # use ajj::{Router, pubsub::{ajj_websocket, AxumWsCfg}};
-/// # use std::sync::Arc;
 /// # {
 /// # async fn _main(router: Router<()>, axum: axum::Router<AxumWsCfg>) -> axum::Router<()>{
 /// // The config object contains the tokio runtime handle, and the
