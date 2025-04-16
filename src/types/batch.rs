@@ -1,6 +1,5 @@
 use crate::types::{Request, RequestError};
 use bytes::Bytes;
-use core::str;
 use serde::Deserialize;
 use serde_json::value::RawValue;
 use std::ops::Range;
@@ -61,17 +60,9 @@ impl TryFrom<Bytes> for InboundData {
         }
         debug!("Parsing inbound data");
 
-        // Trim whitespace from the input bytes. This is necessary to ensure that
-        // we can parse the input as a JSON string. The JSON spec allows for
-        // whitespace before and after the JSON string.
-        // Sadly [`Bytes::trim_ascii`] does not remove linebreaks, so we have to
-        // convert to a str and trim it.
-        let bytes = Bytes::from(str::from_utf8(bytes.as_ref())?.trim().to_owned());
-
-        // Special-case a single request, rejecting invalid JSON.
-        if bytes.starts_with(b"{") {
-            let rv: &RawValue = serde_json::from_slice(bytes.as_ref())?;
-
+        // First, check if it's a single request
+        let rv: &RawValue = serde_json::from_slice(bytes.as_ref())?;
+        if rv.get().starts_with("{") {
             let range = find_range!(bytes, rv.get());
 
             return Ok(Self {
@@ -82,7 +73,7 @@ impl TryFrom<Bytes> for InboundData {
         }
 
         // Otherwise, parse the batch
-        let DeserHelper(reqs) = serde_json::from_slice(bytes.as_ref())?;
+        let DeserHelper(reqs) = serde_json::from_str(rv.get())?;
         let reqs = reqs
             .into_iter()
             .map(|raw| find_range!(bytes, raw.get()))
