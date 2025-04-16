@@ -1,5 +1,6 @@
 use crate::types::{Request, RequestError};
 use bytes::Bytes;
+use core::str;
 use serde::Deserialize;
 use serde_json::value::RawValue;
 use std::ops::Range;
@@ -60,6 +61,8 @@ impl TryFrom<Bytes> for InboundData {
         }
         debug!("Parsing inbound data");
 
+        let bytes = Bytes::from(str::from_utf8(bytes.as_ref())?.trim().to_owned());
+
         // Special-case a single request, rejecting invalid JSON.
         if bytes.starts_with(b"{") {
             let rv: &RawValue = serde_json::from_slice(bytes.as_ref())?;
@@ -90,3 +93,48 @@ impl TryFrom<Bytes> for InboundData {
 
 #[derive(Debug, Deserialize)]
 struct DeserHelper<'a>(#[serde(borrow)] Vec<&'a RawValue>);
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_deser_batch() {
+        let batch = r#"[
+            {"id": 1, "method": "foo", "params": [1, 2, 3]},
+            {"id": 2, "method": "bar", "params": [4, 5, 6]}
+        ]"#;
+
+        let bytes = Bytes::from(batch);
+        let batch = InboundData::try_from(bytes).unwrap();
+
+        assert_eq!(batch.len(), 2);
+        assert!(!batch.single());
+    }
+
+    #[test]
+    fn test_deser_single() {
+        let single = r#"{"id": 1, "method": "foo", "params": [1, 2, 3]}"#;
+
+        let bytes = Bytes::from(single);
+        let batch = InboundData::try_from(bytes).unwrap();
+
+        assert_eq!(batch.len(), 1);
+        assert!(batch.single());
+    }
+
+    #[test]
+    fn test_deser_single_with_whitespace() {
+        let single = r#" 
+        
+        {"id": 1, "method": "foo", "params": [1, 2, 3]}   
+        
+                "#;
+
+        let bytes = Bytes::from(single);
+        let batch = InboundData::try_from(bytes).unwrap();
+
+        assert_eq!(batch.len(), 1);
+        assert!(batch.single());
+    }
+}
