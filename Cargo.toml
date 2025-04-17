@@ -5,7 +5,7 @@ description = "Simple, modern, ergonomic JSON-RPC 2.0 router built with tower an
 keywords = ["json-rpc", "jsonrpc", "json"]
 categories = ["web-programming::http-server", "web-programming::websocket"]
 
-version = "0.3.3"
+version = "0.3.4"
 edition = "2021"
 rust-version = "1.81"
 authors = ["init4", "James Prestwich"]

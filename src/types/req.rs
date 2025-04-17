@@ -192,6 +192,7 @@ impl Request {
 
 #[cfg(test)]
 mod test {
+
     use crate::types::METHOD_LEN_LIMIT;
 
     use super::*;
@@ -235,5 +236,29 @@ mod test {
         };
 
         assert_eq!(size, METHOD_LEN_LIMIT + 1);
+    }
+
+    #[test]
+    fn test_with_linebreak() {
+        let bytes = Bytes::from_static(
+            r#"
+       
+   { "id": 1,
+    "jsonrpc": "2.0",
+    "method": "eth_getBalance",
+    "params": ["0x4444d38c385d0969C64c4C8f996D7536d16c28B9", "latest"]
+  }
+
+        "#
+            .as_bytes(),
+        );
+        let req = Request::try_from(bytes).unwrap();
+
+        assert_eq!(req.id(), Some("1"));
+        assert_eq!(req.method(), r#"eth_getBalance"#);
+        assert_eq!(
+            req.params(),
+            r#"["0x4444d38c385d0969C64c4C8f996D7536d16c28B9", "latest"]"#
+        );
     }
 }
