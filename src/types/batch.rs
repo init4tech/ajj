@@ -60,39 +60,56 @@ impl TryFrom<Bytes> for InboundData {
         }
         debug!("Parsing inbound data");
 
-        // First, check if it's a single request
-        let rv: &RawValue = serde_json::from_slice(bytes.as_ref())?;
-        if rv.get().starts_with("{") {
-            let range = find_range!(bytes, rv.get());
+        // We set up the deserializer to read from the byte buffer.
+        let mut deserializer = serde_json::Deserializer::from_slice(&bytes);
+
+        // If we succesfully deser a batch, we can return it.
+        if let Ok(reqs) = Vec::<&RawValue>::deserialize(&mut deserializer) {
+            // `.end()` performs trailing charcter checks
+            deserializer.end()?;
+            let reqs = reqs
+                .into_iter()
+                .map(|raw| find_range!(bytes, raw.get()))
+                .collect();
 
             return Ok(Self {
                 bytes,
-                reqs: vec![range],
-                single: true,
+                reqs,
+                single: false,
             });
         }
 
-        // Otherwise, parse the batch
-        let DeserHelper(reqs) = serde_json::from_str(rv.get())?;
-        let reqs = reqs
-            .into_iter()
-            .map(|raw| find_range!(bytes, raw.get()))
-            .collect();
+        // If it's not a batch, it should be a single request.
+        let rv = <&RawValue>::deserialize(&mut deserializer)?;
+
+        // `.end()` performs trailing charcter checks
+        deserializer.end()?;
+
+        // If not a JSON object, return an error.
+        if !rv.get().starts_with("{") {
+            return Err(RequestError::UnexpectedJsonType);
+        }
+
+        let range = find_range!(bytes, rv.get());
 
         Ok(Self {
             bytes,
-            reqs,
-            single: false,
+            reqs: vec![range],
+            single: true,
         })
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct DeserHelper<'a>(#[serde(borrow)] Vec<&'a RawValue>);
-
 #[cfg(test)]
 mod test {
     use super::*;
+
+    fn assert_invalid_json(batch: &'static str) {
+        let bytes = Bytes::from(batch);
+        let err = InboundData::try_from(bytes).unwrap_err();
+
+        assert!(matches!(err, RequestError::InvalidJson(_)));
+    }
 
     #[test]
     fn test_deser_batch() {
@@ -121,10 +138,10 @@ mod test {
 
     #[test]
     fn test_deser_single_with_whitespace() {
-        let single = r#" 
-        
-        {"id": 1, "method": "foo", "params": [1, 2, 3]}   
-        
+        let single = r#"
+
+        {"id": 1, "method": "foo", "params": [1, 2, 3]}
+
                 "#;
 
         let bytes = Bytes::from(single);
@@ -132,5 +149,55 @@ mod test {
 
         assert_eq!(batch.len(), 1);
         assert!(batch.single());
+    }
+
+    #[test]
+    fn test_broken_batch() {
+        let batch = r#"[
+            {"id": 1, "method": "foo", "params": [1, 2, 3]},
+            {"id": 2, "method": "bar", "params": [4, 5, 6]
+        ]"#;
+
+        assert_invalid_json(batch);
+    }
+
+    #[test]
+    fn test_junk_prefix() {
+        let batch = r#"JUNK[
+            {"id": 1, "method": "foo", "params": [1, 2, 3]},
+            {"id": 2, "method": "bar", "params": [4, 5, 6]}
+        ]"#;
+
+        assert_invalid_json(batch);
+    }
+
+    #[test]
+    fn test_junk_suffix() {
+        let batch = r#"[
+            {"id": 1, "method": "foo", "params": [1, 2, 3]},
+            {"id": 2, "method": "bar", "params": [4, 5, 6]}
+        ]JUNK"#;
+
+        assert_invalid_json(batch);
+    }
+
+    #[test]
+    fn test_invalid_utf8_prefix() {
+        let batch = r#"\xF1\x80[
+            {"id": 1, "method": "foo", "params": [1, 2, 3]},
+            {"id": 2, "method": "bar", "params": [4, 5, 6]}
+        ]"#;
+
+        assert_invalid_json(batch);
+    }
+
+    #[test]
+    fn test_invalid_utf8_suffix() {
+        let batch = r#"[
+            {"id": 1, "method": "foo", "params": [1, 2, 3]},
+            {"id": 2, "method": "bar", "params": [4, 5, 6]}
+        ]\xF1\x80"#;
+
+        assert_invalid_json(batch);
     }
 }
