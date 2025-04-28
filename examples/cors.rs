@@ -20,9 +20,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cors = std::env::args().nth(1);
     let port = std::env::args()
         .nth(2)
-        .map(|src| u16::from_str_radix(&src, 10).ok())
-        .flatten()
-        .unwrap_or(8080);
+        .and_then(|src| src.parse().ok())
+        .unwrap_or(8080u16);
 
     let router = ajj::Router::<()>::new()
         .route("helloWorld", || async {
