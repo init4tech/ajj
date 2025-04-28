@@ -136,7 +136,6 @@
 //!
 //! [`axum`]: https://docs.rs/axum/latest/axum/index.html
 //! [`axum::Router`]: https://docs.rs/axum/latest/axum/routing/struct.Router.html
-//! [`ResponsePayload`]: alloy::rpc::json_rpc::ResponsePayload
 //! [`interprocess::local_socket::ListenerOptions`]: https://docs.rs/interprocess/latest/interprocess/local_socket/struct.ListenerOptions.html
 
 #![warn(
