@@ -3,10 +3,10 @@ use eyre::{ensure, Context};
 use std::{future::IntoFuture, net::SocketAddr};
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
-fn make_cors(cors: Option<&str>) -> eyre::Result<CorsLayer> {
+fn make_cors(cors: &str) -> eyre::Result<CorsLayer> {
     let origins = match cors {
-        None | Some("*") => AllowOrigin::any(),
-        Some(cors) => {
+        "*" => AllowOrigin::any(),
+        cors => {
             ensure!(
                 !cors.split(',').any(|o| o == "*"),
                 "Wildcard '*' is not allowed in CORS domains"
@@ -31,7 +31,8 @@ fn make_cors(cors: Option<&str>) -> eyre::Result<CorsLayer> {
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    let cors = std::env::args().nth(1);
+    let cors = std::env::args().nth(1).unwrap_or("*".to_string());
+    ensure!(cors != "*", "Wildcard '*' is not allowed in CORS domains");
     let port = std::env::args()
         .nth(2)
         .and_then(|src| src.parse().ok())
@@ -47,7 +48,7 @@ async fn main() -> eyre::Result<()> {
             Ok::<_, ()>(a + b)
         })
         .into_axum("/")
-        .layer(make_cors(cors.as_deref())?);
+        .layer(make_cors(&cors)?);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
