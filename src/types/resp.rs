@@ -73,9 +73,14 @@ where
     E: Serialize,
 {
     pub(crate) fn maybe(
+        span: &tracing::Span,
         id: Option<&'b RawValue>,
         payload: &'a ResponsePayload<T, E>,
     ) -> Option<Box<RawValue>> {
+        if let Some(err_code) = payload.as_error().map(|e| e.code) {
+            span.record("rpc.jsonrpc.error_code", err_code);
+        }
+
         id.map(|id| Self { id, payload }.to_json())
     }
 

@@ -457,8 +457,7 @@ where
 
         Box::pin(async move {
             let payload = self().await;
-
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(args.span(), id.as_deref(), &payload)
         })
     }
 }
@@ -475,10 +474,11 @@ where
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         let id = args.id_owned();
         let (ctx, _) = args.into_parts();
+        let span = ctx.span().clone();
 
         Box::pin(async move {
             let payload = self(ctx).await;
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(&span, id.as_deref(), &payload)
         })
     }
 }
@@ -495,7 +495,8 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        let (_, req) = args.into_parts();
+        let (ctx, req) = args.into_parts();
+        let span = ctx.span().clone();
         Box::pin(async move {
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
@@ -503,7 +504,7 @@ where
             };
 
             let payload = self(params).await;
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(&span, id.as_deref(), &payload)
         })
     }
 }
@@ -519,7 +520,8 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        let (_, req) = args.into_parts();
+        let (ctx, req) = args.into_parts();
+        let span = ctx.span().clone();
         Box::pin(async move {
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
@@ -527,7 +529,7 @@ where
             };
 
             let payload = self(Params(params)).await;
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(&span, id.as_deref(), &payload)
         })
     }
 }
@@ -546,7 +548,7 @@ where
         let id = args.id_owned();
         Box::pin(async move {
             let payload = self(state).await;
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(args.span(), id.as_deref(), &payload)
         })
     }
 }
@@ -565,7 +567,7 @@ where
         let id = args.id_owned();
         Box::pin(async move {
             let payload = self(State(state)).await;
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(args.span(), id.as_deref(), &payload)
         })
     }
 }
@@ -584,6 +586,7 @@ where
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         Box::pin(async move {
             let (ctx, req) = args.into_parts();
+            let span = ctx.span().clone();
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
@@ -593,7 +596,7 @@ where
             drop(req); // deallocate explicitly. No funny business.
 
             let payload = self(ctx, params).await;
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(&span, id.as_deref(), &payload)
         })
     }
 }
@@ -612,6 +615,7 @@ where
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         Box::pin(async move {
             let (ctx, req) = args.into_parts();
+            let span = ctx.span().clone();
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
@@ -621,7 +625,7 @@ where
             drop(req); // deallocate explicitly. No funny business.
 
             let payload = self(ctx, Params(params)).await;
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(&span, id.as_deref(), &payload)
         })
     }
 }
@@ -639,7 +643,8 @@ where
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         Box::pin(async move {
-            let (_, req) = args.into_parts();
+            let (ctx, req) = args.into_parts();
+            let span = ctx.span().clone();
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
@@ -649,7 +654,7 @@ where
 
             let payload = self(params, state).await;
 
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(&span, id.as_deref(), &payload)
         })
     }
 }
@@ -668,14 +673,14 @@ where
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         Box::pin(async move {
             let (ctx, req) = args.into_parts();
-
+            let span = ctx.span().clone();
             let id = req.id_owned();
 
             drop(req); // deallocate explicitly. No funny business.
 
             let payload = self(ctx, state).await;
 
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(&span, id.as_deref(), &payload)
         })
     }
 }
@@ -693,14 +698,14 @@ where
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         Box::pin(async move {
             let (ctx, req) = args.into_parts();
-
+            let span = ctx.span().clone();
             let id = req.id_owned();
 
             drop(req); // deallocate explicitly. No funny business.
 
             let payload = self(ctx, State(state)).await;
 
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(&span, id.as_deref(), &payload)
         })
     }
 }
@@ -720,8 +725,9 @@ where
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         Box::pin(async move {
             let (ctx, req) = args.into_parts();
-
+            let span = ctx.span().clone();
             let id = req.id_owned();
+
             let Ok(params) = req.deser_params() else {
                 return Response::maybe_invalid_params(id.as_deref());
             };
@@ -729,7 +735,7 @@ where
             drop(req); // deallocate explicitly. No funny business.
 
             let payload = self(ctx, params, state).await;
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(&span, id.as_deref(), &payload)
         })
     }
 }
@@ -745,10 +751,11 @@ where
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         let id = args.id_owned();
+        let span = args.span().clone();
         drop(args);
         Box::pin(async move {
             let payload = self().await;
-            Response::maybe(id.as_deref(), &convert_result!(payload))
+            Response::maybe(&span, id.as_deref(), &convert_result!(payload))
         })
     }
 }
@@ -764,14 +771,14 @@ where
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         let (ctx, req) = args.into_parts();
-
+        let span = ctx.span().clone();
         let id = req.id_owned();
 
         drop(req);
 
         Box::pin(async move {
             let payload = convert_result!(self(ctx).await);
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(&span, id.as_deref(), &payload)
         })
     }
 }
@@ -788,8 +795,8 @@ where
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         Box::pin(async move {
-            let (_, req) = args.into_parts();
-
+            let (ctx, req) = args.into_parts();
+            let span = ctx.span().clone();
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
                 return Response::maybe_invalid_params(id.as_deref());
@@ -799,7 +806,7 @@ where
 
             let payload = convert_result!(self(params).await);
 
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(&span, id.as_deref(), &payload)
         })
     }
 }
@@ -816,7 +823,8 @@ where
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         Box::pin(async move {
-            let (_, req) = args.into_parts();
+            let (ctx, req) = args.into_parts();
+            let span = ctx.span().clone();
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
@@ -827,7 +835,7 @@ where
 
             let payload = convert_result!(self(Params(params)).await);
 
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(&span, id.as_deref(), &payload)
         })
     }
 }
@@ -846,7 +854,7 @@ where
         let id = args.id_owned();
         Box::pin(async move {
             let payload = convert_result!(self(state).await);
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(args.span(), id.as_deref(), &payload)
         })
     }
 }
@@ -865,7 +873,7 @@ where
         let id = args.id_owned();
         Box::pin(async move {
             let payload = convert_result!(self(State(state)).await);
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(args.span(), id.as_deref(), &payload)
         })
     }
 }
@@ -884,7 +892,7 @@ where
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         Box::pin(async move {
             let (ctx, req) = args.into_parts();
-
+            let span = ctx.span().clone();
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
                 return Response::maybe_invalid_params(id.as_deref());
@@ -894,7 +902,7 @@ where
 
             let payload = convert_result!(self(ctx, params).await);
 
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(&span, id.as_deref(), &payload)
         })
     }
 }
@@ -912,7 +920,7 @@ where
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         Box::pin(async move {
             let (ctx, req) = args.into_parts();
-
+            let span = ctx.span().clone();
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
                 return Response::maybe_invalid_params(id.as_deref());
@@ -922,7 +930,7 @@ where
 
             let payload = convert_result!(self(ctx, Params(params)).await);
 
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(&span, id.as_deref(), &payload)
         })
     }
 }
@@ -940,7 +948,8 @@ where
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         Box::pin(async move {
-            let (_, req) = args.into_parts();
+            let (ctx, req) = args.into_parts();
+            let span = ctx.span().clone();
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
@@ -951,7 +960,7 @@ where
 
             let payload = convert_result!(self(params, state).await);
 
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(&span, id.as_deref(), &payload)
         })
     }
 }
@@ -968,15 +977,15 @@ where
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         let (ctx, req) = args.into_parts();
-
+        let span = ctx.span().clone();
         let id = req.id_owned();
 
-        drop(req);
+        drop(req); // deallocate explicitly. No funny business.
 
         Box::pin(async move {
             let payload = convert_result!(self(ctx, state).await);
 
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(&span, id.as_deref(), &payload)
         })
     }
 }
@@ -993,15 +1002,15 @@ where
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         let (ctx, req) = args.into_parts();
-
+        let span = ctx.span().clone();
         let id = req.id_owned();
 
-        drop(req);
+        drop(req); // deallocate explicitly. No funny business.
 
         Box::pin(async move {
             let payload = convert_result!(self(ctx, State(state)).await);
 
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(&span, id.as_deref(), &payload)
         })
     }
 }
@@ -1020,7 +1029,7 @@ where
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         Box::pin(async move {
             let (ctx, req) = args.into_parts();
-
+            let span = ctx.span().clone();
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
                 return Response::maybe_invalid_params(id.as_deref());
@@ -1030,7 +1039,7 @@ where
 
             let payload = convert_result!(self(ctx, params, state).await);
 
-            Response::maybe(id.as_deref(), &payload)
+            Response::maybe(&span, id.as_deref(), &payload)
         })
     }
 }
