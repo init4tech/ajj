@@ -76,11 +76,12 @@ See the [crate documentation on docs.rs] for more detailed examples.
 `ajj` aims to be fully compliant with the [JSON-RPC 2.0] specification. If any
 issues are found, please [open an issue]!
 
-`ajj` produces [`tracing`] spans that meet the [OpenTelemetry semantic
-conventions] for JSON-RPC servers with the following exception:
+`ajj` produces [`tracing`] spans and events that meet the [OpenTelemetry
+semantic conventions] for JSON-RPC servers with the following exception:
 
 - The `server.address` attribute is NOT set, as the server address is not always
   known to the ajj system.
+-
 
 ## Note on code provenance
 
