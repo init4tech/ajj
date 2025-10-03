@@ -79,7 +79,7 @@ where
     ) -> Option<Box<RawValue>> {
         if let Some(e) = payload.as_error() {
             span.record("rpc.jsonrpc.error_code", e.code);
-            span.record("rpc.jsonrpc.error_message", &e.message.as_ref());
+            span.record("rpc.jsonrpc.error_message", e.message.as_ref());
         }
 
         id.map(|id| Self { id, payload }.to_json())
