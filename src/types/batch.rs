@@ -58,6 +58,10 @@ impl TryFrom<Bytes> for InboundData {
         if enabled!(Level::TRACE) {
             tracing::span::Span::current().record("bytes", format!("0x{:x}", bytes));
         }
+
+        // This event exists only so that people who use default console
+        // logging setups still see the span details. Without this event, the
+        // span would not show up in logs.
         debug!("Parsing inbound data");
 
         // We set up the deserializer to read from the byte buffer.

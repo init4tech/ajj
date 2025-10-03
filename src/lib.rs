@@ -24,7 +24,7 @@
 //!   })
 //!   // Routes get a ctx, which can be used to send notifications.
 //!   .route("notify", |ctx: HandlerCtx| async move {
-//!     if ctx.notifications().is_none() {
+//!     if !ctx.notifications_enabled() {
 //!       // This error will appear in the ResponsePayload's `data` field.
 //!       return Err("notifications are disabled");
 //!     }
@@ -171,6 +171,7 @@ pub use pubsub::ReadJsonStream;
 mod routes;
 pub use routes::{
     BatchFuture, Handler, HandlerArgs, HandlerCtx, NotifyError, Params, RouteFuture, State,
+    TracingInfo,
 };
 pub(crate) use routes::{BoxedIntoRoute, ErasedIntoRoute, Method, Route};
 
@@ -206,7 +207,8 @@ pub(crate) mod test_utils {
 mod test {
 
     use crate::{
-        router::RouterInner, routes::HandlerArgs, test_utils::assert_rv_eq, ResponsePayload,
+        router::RouterInner, routes::HandlerArgs, test_utils::assert_rv_eq, HandlerCtx,
+        ResponsePayload,
     };
     use bytes::Bytes;
     use serde_json::value::RawValue;
@@ -232,7 +234,7 @@ mod test {
         let res = router
             .call_with_state(
                 HandlerArgs {
-                    ctx: Default::default(),
+                    ctx: HandlerCtx::mock(),
                     req: req.try_into().unwrap(),
                 },
                 (),
@@ -251,7 +253,7 @@ mod test {
         let res2 = router
             .call_with_state(
                 HandlerArgs {
-                    ctx: Default::default(),
+                    ctx: HandlerCtx::mock(),
                     req: req2.try_into().unwrap(),
                 },
                 (),

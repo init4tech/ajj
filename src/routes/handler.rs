@@ -3,7 +3,7 @@ use crate::{
 };
 use serde_json::value::RawValue;
 use std::{convert::Infallible, future::Future, marker::PhantomData, pin::Pin, task};
-use tracing::{debug_span, enabled, trace, Instrument, Level};
+use tracing::{trace, Instrument};
 
 macro_rules! convert_result {
     ($res:expr) => {{
@@ -412,16 +412,9 @@ where
     fn call(&mut self, args: HandlerArgs) -> Self::Future {
         let this = self.clone();
         Box::pin(async move {
-            let notifications_enabled = args.ctx.notifications_enabled();
-
-            let span = debug_span!(
-                "HandlerService::call",
-                notifications_enabled,
-                params = tracing::field::Empty
-            );
-            if enabled!(Level::TRACE) {
-                span.record("params", args.req.params());
-            }
+            // This span captures standard OpenTelemetry attributes for
+            // JSON-RPC according to OTEL semantic conventions.
+            let span = args.span().clone();
 
             Ok(this
                 .handler

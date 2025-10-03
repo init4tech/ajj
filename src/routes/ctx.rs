@@ -1,9 +1,12 @@
-use crate::{types::Request, RpcSend, TaskSet};
+use crate::{pubsub::WriteItem, types::Request, RpcSend, TaskSet};
 use serde_json::value::RawValue;
 use std::future::Future;
-use tokio::{runtime::Handle, sync::mpsc, task::JoinHandle};
+use tokio::{
+    sync::mpsc::{self, error::SendError},
+    task::JoinHandle,
+};
 use tokio_util::sync::WaitForCancellationFutureOwned;
-use tracing::error;
+use tracing::{enabled, error, Level};
 
 /// Errors that can occur when sending notifications.
 #[derive(thiserror::Error, Debug)]
@@ -13,7 +16,37 @@ pub enum NotifyError {
     Serde(#[from] serde_json::Error),
     /// The notification channel was closed.
     #[error("notification channel closed")]
-    Send(#[from] mpsc::error::SendError<Box<RawValue>>),
+    Send(#[from] SendError<Box<RawValue>>),
+}
+
+impl From<SendError<WriteItem>> for NotifyError {
+    fn from(value: SendError<WriteItem>) -> Self {
+        SendError(value.0.json).into()
+    }
+}
+
+/// Tracing information for OpenTelemetry. This struct is used to store
+/// information about the current request that can be used for tracing.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct TracingInfo {
+    /// The OpenTelemetry service name.
+    pub service: &'static str,
+
+    /// The request span.
+    pub request_span: tracing::Span,
+}
+
+impl TracingInfo {
+    /// Create a mock tracing info for testing.
+    #[cfg(test)]
+    pub fn mock() -> Self {
+        use tracing::debug_span;
+        Self {
+            service: "test",
+            request_span: debug_span!("test"),
+        }
+    }
 }
 
 /// A context for handler requests that allow the handler to send notifications
@@ -25,52 +58,62 @@ pub enum NotifyError {
 /// - Sending notifications to pubsub clients via [`HandlerCtx::notify`].
 ///   Notifcations SHOULD be valid JSON-RPC objects, but this is
 ///   not enforced by the type system.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct HandlerCtx {
-    pub(crate) notifications: Option<mpsc::Sender<Box<RawValue>>>,
+    pub(crate) notifications: Option<mpsc::Sender<WriteItem>>,
 
     /// A task set on which to spawn tasks. This is used to coordinate
     pub(crate) tasks: TaskSet,
-}
 
-impl From<TaskSet> for HandlerCtx {
-    fn from(tasks: TaskSet) -> Self {
-        Self {
-            notifications: None,
-            tasks,
-        }
-    }
-}
-
-impl From<Handle> for HandlerCtx {
-    fn from(handle: Handle) -> Self {
-        Self {
-            notifications: None,
-            tasks: handle.into(),
-        }
-    }
+    /// Tracing information for OpenTelemetry.
+    pub(crate) tracing: TracingInfo,
 }
 
 impl HandlerCtx {
     /// Create a new handler context.
-    #[allow(dead_code)] // used in pubsub and axum features
     pub(crate) const fn new(
-        notifications: Option<mpsc::Sender<Box<RawValue>>>,
+        notifications: Option<mpsc::Sender<WriteItem>>,
         tasks: TaskSet,
+        tracing: TracingInfo,
     ) -> Self {
         Self {
             notifications,
             tasks,
+            tracing,
         }
     }
 
-    /// Get a reference to the notification sender. This is used to
-    /// send notifications over pubsub transports.
-    pub const fn notifications(&self) -> Option<&mpsc::Sender<Box<RawValue>>> {
-        self.notifications.as_ref()
+    /// Create a mock handler context for testing.
+    #[cfg(test)]
+    pub fn mock() -> Self {
+        Self {
+            notifications: None,
+            tasks: TaskSet::default(),
+            tracing: TracingInfo::mock(),
+        }
     }
 
-    /// Check if notiifcations can be sent to the client. This will be false
+    /// Get a reference to the tracing information for this handler context.
+    pub const fn tracing_info(&self) -> &TracingInfo {
+        &self.tracing
+    }
+
+    /// Get the OpenTelemetry service name for this handler context.
+    pub const fn otel_service_name(&self) -> &'static str {
+        self.tracing.service
+    }
+
+    /// Get a reference to the tracing span for this handler context.
+    pub const fn span(&self) -> &tracing::Span {
+        &self.tracing.request_span
+    }
+
+    /// Set the tracing information for this handler context.
+    pub fn set_tracing_info(&mut self, tracing: TracingInfo) {
+        self.tracing = tracing;
+    }
+
+    /// Check if notifications can be sent to the client. This will be false
     /// when either the transport does not support notifications, or the
     /// notification channel has been closed (due the the client going away).
     pub fn notifications_enabled(&self) -> bool {
@@ -84,7 +127,12 @@ impl HandlerCtx {
     pub async fn notify<T: RpcSend>(&self, t: &T) -> Result<(), NotifyError> {
         if let Some(notifications) = self.notifications.as_ref() {
             let rv = serde_json::value::to_raw_value(t)?;
-            notifications.send(rv).await?;
+            notifications
+                .send(WriteItem {
+                    span: self.span().clone(),
+                    json: rv,
+                })
+                .await?;
         }
 
         Ok(())
@@ -218,8 +266,17 @@ pub struct HandlerArgs {
 
 impl HandlerArgs {
     /// Create new handler arguments.
-    pub const fn new(ctx: HandlerCtx, req: Request) -> Self {
-        Self { ctx, req }
+    pub fn new(ctx: HandlerCtx, req: Request) -> Self {
+        let this = Self { ctx, req };
+
+        let span = this.span();
+        span.record("otel.name", this.otel_span_name());
+        span.record("rpc.method", this.req.method());
+        if enabled!(Level::TRACE) {
+            span.record("params", this.req.params());
+        }
+
+        this
     }
 
     /// Get a reference to the handler context.
@@ -227,8 +284,18 @@ impl HandlerArgs {
         &self.ctx
     }
 
+    /// Get a reference to the tracing span for this handler invocation.
+    pub const fn span(&self) -> &tracing::Span {
+        self.ctx.span()
+    }
+
     /// Get a reference to the JSON-RPC request.
     pub const fn req(&self) -> &Request {
         &self.req
+    }
+
+    /// Get the OpenTelemetry span name for this handler invocation.
+    pub fn otel_span_name(&self) -> String {
+        format!("{}/{}", self.ctx.otel_service_name(), self.req.method())
     }
 }

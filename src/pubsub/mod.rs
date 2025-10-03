@@ -95,6 +95,7 @@ mod ipc;
 pub use ipc::ReadJsonStream;
 
 mod shared;
+pub(crate) use shared::WriteItem;
 pub use shared::{ConnectionId, DEFAULT_NOTIFICATION_BUFFER_PER_CLIENT};
 
 mod shutdown;

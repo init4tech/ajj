@@ -1,5 +1,5 @@
 mod ctx;
-pub use ctx::{HandlerArgs, HandlerCtx, NotifyError};
+pub use ctx::{HandlerArgs, HandlerCtx, NotifyError, TracingInfo};
 
 mod erased;
 pub(crate) use erased::{BoxedIntoRoute, ErasedIntoRoute, MakeErasedHandler};
@@ -14,6 +14,7 @@ pub use handler::{Handler, Params, State};
 mod method;
 pub(crate) use method::Method;
 
+use crate::types::Response;
 use serde_json::value::RawValue;
 use std::{
     convert::Infallible,
@@ -21,8 +22,6 @@ use std::{
 };
 use tower::{util::BoxCloneSyncService, Service, ServiceExt};
 use tracing::{debug_span, enabled, Level};
-
-use crate::types::Response;
 
 /// A JSON-RPC handler for a specific method.
 ///
