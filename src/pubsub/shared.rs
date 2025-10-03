@@ -254,6 +254,10 @@ where
                         break;
                     };
 
+                     // This span is populated with as much detail as
+                     // possible, and then given to the Handler ctx. It
+                     // will be populated with request-specific details
+                     // (e.g. method) during ctx instantiation.
                     let tracing = TracingInfo { service: router.service_name(), request_span: debug_span!(
                         parent: None,
                         "ajj.pubsub.RouteTask::call",
@@ -275,11 +279,12 @@ where
 
                     let span = ctx.span().clone();
                     span.in_scope(|| {
+                        // https://github.com/open-telemetry/semantic-conventions/blob/d66109ff41e75f49587114e5bff9d101b87f40bd/docs/rpc/rpc-spans.md#events
                         debug!(
                             "rpc.message.id" = rx_msg_id.fetch_add(1, Ordering::Relaxed),
-                            "rpc.message.type" = "received",
+                            "rpc.message.type" = "RECEIVED",
                             "rpc.message.uncompressed_size" = item_bytes,
-                            "Received request"
+                            "rpc.message"
                         );
                     });
 
@@ -374,10 +379,11 @@ impl<T: Listener> WriteTask<T> {
                         break;
                     };
                     span.in_scope(|| {
+                        // https://github.com/open-telemetry/semantic-conventions/blob/d66109ff41e75f49587114e5bff9d101b87f40bd/docs/rpc/rpc-spans.md#events
                         debug!(
                             "rpc.message.id" = tx_msg_id.fetch_add(1, Ordering::Relaxed),
-                            "rpc.message.type" = "sent",
-                            "Sending response"
+                            "rpc.message.type" = "SENT",
+                            "rpc.message"
                         );
                     });
 

@@ -279,6 +279,7 @@ impl HandlerArgs {
         let span = this.span();
         span.record("otel.name", this.otel_span_name());
         span.record("rpc.method", this.req.method());
+        span.record("rpc.jsonrpc.request_id", this.req.id());
         if enabled!(Level::TRACE) {
             span.record("params", this.req.params());
         }

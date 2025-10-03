@@ -66,6 +66,9 @@ where
     S: Clone + Send + Sync + 'static,
 {
     fn ctx(&self) -> HandlerCtx {
+        // This span is populated with as much detail as possible, and then
+        // given to the Handler ctx. It will be populated with request-specific
+        // details (e.g. method) during ctx instantiation.
         let request_span = debug_span!(
             "ajj.IntoAxum::call",
             "otel.kind" = "server",
@@ -103,11 +106,12 @@ where
 
             // https://github.com/open-telemetry/semantic-conventions/blob/main/docs/rpc/rpc-spans.md#message-event
             let req = ctx.span().in_scope(|| {
+                //// https://github.com/open-telemetry/semantic-conventions/blob/d66109ff41e75f49587114e5bff9d101b87f40bd/docs/rpc/rpc-spans.md#events
                 debug!(
                     "rpc.message.id" = self.rx_msg_id.fetch_add(1, Ordering::Relaxed),
-                    "rpc.message.type" = "received",
+                    "rpc.message.type" = "RECEIVED",
                     "rpc.message.uncompressed_size" = bytes.len(),
-                    "Received request"
+                    "rpc.message"
                 );
 
                 // If the inbound data is not currently parsable, we
@@ -126,10 +130,11 @@ where
                 let body = Box::<str>::from(response);
 
                 span.in_scope(|| {
+                    // https://github.com/open-telemetry/semantic-conventions/blob/d66109ff41e75f49587114e5bff9d101b87f40bd/docs/rpc/rpc-spans.md#events
                     debug!(
                         "rpc.message.id" = self.tx_msg_id.fetch_add(1, Ordering::Relaxed),
-                        "rpc.message.type" = "received",
-                        "Received request"
+                        "rpc.message.type" = "SENT",
+                        "rpc.message.uncompressed_size" = body.len(),
                     );
                 });
 
