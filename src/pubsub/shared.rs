@@ -255,6 +255,7 @@ where
                         "rpc.system" = "jsonrpc",
                         "rpc.jsonrpc.version" = "2.0",
                         "rpc.service" = router.service_name(),
+                        conn_id = self.conn_id,
                         notifications_enabled = true,
                         params = tracing::field::Empty
                     ) };
@@ -366,7 +367,6 @@ impl<T: Listener> WriteTask<T> {
                         tracing::error!("Json stream has closed");
                         break;
                     };
-                    span.record("conn_id", self.conn_id);
                     span.in_scope(|| {
                         debug!(
                             "rpc.message.id" = tx_msg_id.fetch_add(1, Ordering::Relaxed),
