@@ -126,6 +126,8 @@ impl AxumWsCfg {
                 next_id: arc.next_id.clone(),
                 router: arc.router.clone(),
                 notification_buffer_per_task: arc.notification_buffer_per_task,
+                tx_msg_id: arc.tx_msg_id.clone(),
+                rx_msg_id: arc.rx_msg_id.clone(),
             },
         }
     }

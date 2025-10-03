@@ -70,6 +70,10 @@ pub(crate) struct ConnectionManager {
     pub(crate) router: crate::Router<()>,
 
     pub(crate) notification_buffer_per_task: usize,
+
+    // OTEL message counters
+    pub(crate) tx_msg_id: Arc<AtomicU32>,
+    pub(crate) rx_msg_id: Arc<AtomicU32>,
 }
 
 impl ConnectionManager {
@@ -80,6 +84,8 @@ impl ConnectionManager {
             next_id: AtomicU64::new(0).into(),
             router,
             notification_buffer_per_task: DEFAULT_NOTIFICATION_BUFFER_PER_CLIENT,
+            tx_msg_id: Arc::new(AtomicU32::new(0)),
+            rx_msg_id: Arc::new(AtomicU32::new(0)),
         }
     }
 
@@ -133,7 +139,7 @@ impl ConnectionManager {
             write_task: tx,
             requests,
             tasks: tasks.clone(),
-            rx_msg_id: Arc::new(AtomicU32::new(0)),
+            rx_msg_id: self.rx_msg_id.clone(),
         };
 
         let wt = WriteTask {
@@ -141,7 +147,7 @@ impl ConnectionManager {
             conn_id,
             items: rx,
             connection,
-            tx_msg_id: Arc::new(AtomicU32::new(0)),
+            tx_msg_id: self.tx_msg_id.clone(),
         };
 
         (rt, wt)
