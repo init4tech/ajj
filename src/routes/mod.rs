@@ -51,9 +51,8 @@ impl Route {
     /// Create a default fallback route that returns a method not found error.
     pub(crate) fn default_fallback() -> Self {
         Self::new(tower::service_fn(|args: HandlerArgs| async {
-            let HandlerArgs { req, .. } = args;
-            let id = req.id_owned();
-            drop(req);
+            let id = args.id_owned();
+            drop(args); // no longer needed
 
             Ok(Response::maybe_method_not_found(id.as_deref()))
         }))
@@ -101,7 +100,7 @@ impl Service<HandlerArgs> for Route {
             params = tracing::field::Empty,
         );
         if enabled!(Level::TRACE) {
-            span.record("params", args.req.params());
+            span.record("params", args.req().params());
         }
         self.oneshot_inner(args)
     }

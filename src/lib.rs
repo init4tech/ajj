@@ -233,10 +233,7 @@ mod test {
 
         let res = router
             .call_with_state(
-                HandlerArgs {
-                    ctx: HandlerCtx::mock(),
-                    req: req.try_into().unwrap(),
-                },
+                HandlerArgs::new(HandlerCtx::mock(), req.try_into().unwrap()),
                 (),
             )
             .await
@@ -252,10 +249,7 @@ mod test {
 
         let res2 = router
             .call_with_state(
-                HandlerArgs {
-                    ctx: HandlerCtx::mock(),
-                    req: req2.try_into().unwrap(),
-                },
+                HandlerArgs::new(HandlerCtx::mock(), req2.try_into().unwrap()),
                 (),
             )
             .await

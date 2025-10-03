@@ -453,7 +453,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        let id = args.req.id_owned();
+        let id = args.id_owned();
 
         Box::pin(async move {
             let payload = self().await;
@@ -473,8 +473,8 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        let id = args.req.id_owned();
-        let ctx = args.ctx;
+        let id = args.id_owned();
+        let (ctx, _) = args.into_parts();
 
         Box::pin(async move {
             let payload = self(ctx).await;
@@ -495,7 +495,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        let HandlerArgs { req, .. } = args;
+        let (_, req) = args.into_parts();
         Box::pin(async move {
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
@@ -519,7 +519,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        let HandlerArgs { req, .. } = args;
+        let (_, req) = args.into_parts();
         Box::pin(async move {
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
@@ -543,7 +543,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
-        let id = args.req.id_owned();
+        let id = args.id_owned();
         Box::pin(async move {
             let payload = self(state).await;
             Response::maybe(id.as_deref(), &payload)
@@ -562,7 +562,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
-        let id = args.req.id_owned();
+        let id = args.id_owned();
         Box::pin(async move {
             let payload = self(State(state)).await;
             Response::maybe(id.as_deref(), &payload)
@@ -583,7 +583,7 @@ where
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         Box::pin(async move {
-            let HandlerArgs { ctx, req } = args;
+            let (ctx, req) = args.into_parts();
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
@@ -611,7 +611,7 @@ where
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         Box::pin(async move {
-            let HandlerArgs { ctx, req } = args;
+            let (ctx, req) = args.into_parts();
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
@@ -639,7 +639,7 @@ where
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         Box::pin(async move {
-            let HandlerArgs { req, .. } = args;
+            let (_, req) = args.into_parts();
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
@@ -667,7 +667,7 @@ where
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         Box::pin(async move {
-            let HandlerArgs { ctx, req } = args;
+            let (ctx, req) = args.into_parts();
 
             let id = req.id_owned();
 
@@ -692,7 +692,7 @@ where
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         Box::pin(async move {
-            let HandlerArgs { ctx, req } = args;
+            let (ctx, req) = args.into_parts();
 
             let id = req.id_owned();
 
@@ -719,7 +719,7 @@ where
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         Box::pin(async move {
-            let HandlerArgs { ctx, req } = args;
+            let (ctx, req) = args.into_parts();
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
@@ -744,7 +744,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        let id = args.req.id_owned();
+        let id = args.id_owned();
         drop(args);
         Box::pin(async move {
             let payload = self().await;
@@ -763,7 +763,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        let HandlerArgs { ctx, req } = args;
+        let (ctx, req) = args.into_parts();
 
         let id = req.id_owned();
 
@@ -788,7 +788,7 @@ where
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         Box::pin(async move {
-            let HandlerArgs { req, .. } = args;
+            let (_, req) = args.into_parts();
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
@@ -816,7 +816,7 @@ where
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         Box::pin(async move {
-            let HandlerArgs { req, .. } = args;
+            let (_, req) = args.into_parts();
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
@@ -843,7 +843,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
-        let id = args.req.id_owned();
+        let id = args.id_owned();
         Box::pin(async move {
             let payload = convert_result!(self(state).await);
             Response::maybe(id.as_deref(), &payload)
@@ -862,7 +862,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
-        let id = args.req.id_owned();
+        let id = args.id_owned();
         Box::pin(async move {
             let payload = convert_result!(self(State(state)).await);
             Response::maybe(id.as_deref(), &payload)
@@ -883,7 +883,7 @@ where
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         Box::pin(async move {
-            let HandlerArgs { ctx, req } = args;
+            let (ctx, req) = args.into_parts();
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
@@ -911,7 +911,7 @@ where
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
         Box::pin(async move {
-            let HandlerArgs { ctx, req } = args;
+            let (ctx, req) = args.into_parts();
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
@@ -940,7 +940,7 @@ where
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         Box::pin(async move {
-            let HandlerArgs { req, .. } = args;
+            let (_, req) = args.into_parts();
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {
@@ -967,7 +967,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
-        let HandlerArgs { ctx, req } = args;
+        let (ctx, req) = args.into_parts();
 
         let id = req.id_owned();
 
@@ -992,7 +992,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
-        let HandlerArgs { ctx, req } = args;
+        let (ctx, req) = args.into_parts();
 
         let id = req.id_owned();
 
@@ -1019,7 +1019,7 @@ where
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
         Box::pin(async move {
-            let HandlerArgs { ctx, req } = args;
+            let (ctx, req) = args.into_parts();
 
             let id = req.id_owned();
             let Ok(params) = req.deser_params() else {

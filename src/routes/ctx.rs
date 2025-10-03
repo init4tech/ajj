@@ -259,15 +259,22 @@ impl HandlerCtx {
 #[derive(Debug, Clone)]
 pub struct HandlerArgs {
     /// The handler context.
-    pub(crate) ctx: HandlerCtx,
+    ctx: HandlerCtx,
     /// The JSON-RPC request.
-    pub(crate) req: Request,
+    req: Request,
+
+    /// prevent instantation outside of this module
+    _seal: (),
 }
 
 impl HandlerArgs {
     /// Create new handler arguments.
     pub fn new(ctx: HandlerCtx, req: Request) -> Self {
-        let this = Self { ctx, req };
+        let this = Self {
+            ctx,
+            req,
+            _seal: (),
+        };
 
         let span = this.span();
         span.record("otel.name", this.otel_span_name());
@@ -277,6 +284,11 @@ impl HandlerArgs {
         }
 
         this
+    }
+
+    /// Decompose the handler arguments into its parts.
+    pub fn into_parts(self) -> (HandlerCtx, Request) {
+        (self.ctx, self.req)
     }
 
     /// Get a reference to the handler context.
@@ -292,6 +304,11 @@ impl HandlerArgs {
     /// Get a reference to the JSON-RPC request.
     pub const fn req(&self) -> &Request {
         &self.req
+    }
+
+    /// Get the ID of the JSON-RPC request, if any.
+    pub fn id_owned(&self) -> Option<Box<RawValue>> {
+        self.req.id_owned()
     }
 
     /// Get the OpenTelemetry span name for this handler invocation.
