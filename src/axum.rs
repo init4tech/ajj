@@ -70,12 +70,19 @@ where
         // given to the Handler ctx. It will be populated with request-specific
         // details (e.g. method) during ctx instantiation.
         let request_span = debug_span!(
+            // We could erase the parent here, however, axum or tower layers
+            // may be creating per-request spans that we want to be children of.
             "ajj.IntoAxum::call",
             "otel.kind" = "server",
             "rpc.system" = "jsonrpc",
             "rpc.jsonrpc.version" = "2.0",
             "rpc.service" = self.router.service_name(),
             notifications_enabled = false,
+            "otel.name" = tracing::field::Empty,
+            "rpc.jsonrpc.request_id" = tracing::field::Empty,
+            "rpc.jsonrpc.error_code" = tracing::field::Empty,
+            "rpc.jsonrpc.error_message" = tracing::field::Empty,
+            "rpc.method" = tracing::field::Empty,
             params = tracing::field::Empty
         );
 

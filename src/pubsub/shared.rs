@@ -267,6 +267,11 @@ where
                         "rpc.service" = router.service_name(),
                         conn_id = self.conn_id,
                         notifications_enabled = true,
+                        "otel.name" = tracing::field::Empty,
+                        "rpc.jsonrpc.request_id" = tracing::field::Empty,
+                        "rpc.jsonrpc.error_code" = tracing::field::Empty,
+                        "rpc.jsonrpc.error_message" = tracing::field::Empty,
+                        "rpc.method" = tracing::field::Empty,
                         params = tracing::field::Empty
                     ) };
 
