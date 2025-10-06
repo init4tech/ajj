@@ -8,12 +8,14 @@ use axum::{
     response::IntoResponse,
 };
 use bytes::Bytes;
+use opentelemetry::trace::TraceContextExt;
 use std::{
     future::Future,
     pin::Pin,
     sync::{atomic::AtomicU32, Arc},
 };
 use tokio::runtime::Handle;
+use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// A wrapper around an [`Router`] that implements the
@@ -62,15 +64,30 @@ impl<S> IntoAxum<S>
 where
     S: Clone + Send + Sync + 'static,
 {
-    fn ctx(&self) -> HandlerCtx {
+    fn ctx(&self, req: &axum::extract::Request) -> HandlerCtx {
         // This span is populated with as much detail as possible, and then
         // given to the Handler ctx. It will be populated with request-specific
         // details (e.g. method) during ctx instantiation.
         let request_span = request_span!(
+            parent: Span::current(),
             // We could erase the parent here, however, axum or tower layers
             // may be creating per-request spans that we want to be children of.
-            name: "ajj.IntoAxum::call",
+            name: "ajj.IntoAxum::request",
             router: &self.router,
+        );
+
+        let parent_context = opentelemetry::global::get_text_map_propagator(|propagator| {
+            propagator.extract(&opentelemetry_http::HeaderExtractor(req.headers()))
+        });
+        request_span.set_parent(parent_context).unwrap();
+        request_span.record(
+            "trace_id",
+            request_span
+                .context()
+                .span()
+                .span_context()
+                .trace_id()
+                .to_string(),
         );
 
         HandlerCtx::new(
@@ -92,12 +109,7 @@ where
 
     fn call(self, req: axum::extract::Request, state: S) -> Self::Future {
         Box::pin(async move {
-            let ctx = self.ctx();
-
-            let parent_context = opentelemetry::global::get_text_map_propagator(|propagator| {
-                propagator.extract(&opentelemetry_http::HeaderExtractor(req.headers()))
-            });
-            ctx.span().set_parent(parent_context).unwrap();
+            let ctx = self.ctx(&req);
 
             let Ok(bytes) = Bytes::from_request(req, &state).await else {
                 return Box::<str>::from(Response::parse_error()).into_response();

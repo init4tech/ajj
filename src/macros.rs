@@ -56,24 +56,6 @@ macro_rules! unwrap_infallible {
 
 /// Set up an initial tracing span for a request handler.
 macro_rules! request_span {
-    (@noparent, $name:literal, $router:expr, notifications: $notifications:literal,) => {
-        ::tracing::debug_span!(
-            parent: None,
-            $name,
-            "otel.kind" = "server",
-            "rpc.system" = "jsonrpc",
-            "rpc.jsonrpc.version" = "2.0",
-            "rpc.service" = $router.service_name(),
-            notifications_enabled = $notifications,
-            "otel.name" = ::tracing::field::Empty,
-            "rpc.jsonrpc.request_id" = ::tracing::field::Empty,
-            "rpc.jsonrpc.error_code" = ::tracing::field::Empty,
-            "rpc.jsonrpc.error_message" = ::tracing::field::Empty,
-            "rpc.method" = ::tracing::field::Empty,
-            params = ::tracing::field::Empty,
-        )
-    };
-
     (parent: $parent:expr, $name:literal, $router:expr, notifications: $notifications:literal,) => {
         ::tracing::debug_span!(
             parent: $parent,
@@ -83,7 +65,9 @@ macro_rules! request_span {
             "rpc.jsonrpc.version" = "2.0",
             "rpc.service" = $router.service_name(),
             notifications_enabled = $notifications,
+            "trace_id" = ::tracing::field::Empty,
             "otel.name" = ::tracing::field::Empty,
+            "otel.status" = ::tracing::field::Empty,
             "rpc.jsonrpc.request_id" = ::tracing::field::Empty,
             "rpc.jsonrpc.error_code" = ::tracing::field::Empty,
             "rpc.jsonrpc.error_message" = ::tracing::field::Empty,
@@ -94,19 +78,19 @@ macro_rules! request_span {
 
 
     (parent: $parent:expr, name: $name:literal, router: $router:expr,) => {
-        request_span!($parent, $name, $router, notifications: false,)
+        request_span!(parent: $parent, $name, $router, notifications: false,)
     };
 
     (parent: $parent:expr, name: $name:literal, router: $router:expr, with_notifications) => {
         request_span!(parent: $parent, $name, $router, notifications: true,)
     };
 
-    (name: $name:literal, router: $router:expr,) => {
-        request_span!(@noparent, $name, $router, notifications: false,)
+    (@noparent, name: $name:literal, router: $router:expr,) => {
+        request_span!(parent: None,, $name, $router, notifications: false,)
     };
 
-    (name: $name:literal, router: $router:expr, with_notifications) => {
-        request_span!(@noparent, $name, $router, notifications: true,)
+    (@noparent, name: $name:literal, router: $router:expr, with_notifications) => {
+        request_span!(parent: None, $name, $router, notifications: true,)
     };
 }
 
