@@ -133,12 +133,11 @@ impl TracingInfo {
 
     /// Create a mock tracing info for testing.
     #[cfg(test)]
-    pub const fn mock() -> Self {
-        
+    pub fn mock() -> Self {
         Self {
             service: "test",
             context: None,
-            span: OnceLock::new(),
+            span: OnceLock::from(info_span!("")),
         }
     }
 }
@@ -377,6 +376,12 @@ pub struct HandlerArgs {
 
 impl HandlerArgs {
     /// Create new handler arguments.
+    ///
+    /// ## Panics
+    ///
+    /// If the ctx tracing span has not been initialized via
+    /// [`HandlerCtx::init_request_span`].
+    #[track_caller]
     pub fn new(ctx: HandlerCtx, req: Request) -> Self {
         let this = Self {
             ctx,
@@ -406,6 +411,12 @@ impl HandlerArgs {
     }
 
     /// Get a reference to the tracing span for this handler invocation.
+    ///
+    /// ## Panics
+    ///
+    /// If the span has not been initialized via
+    /// [`HandlerCtx::init_request_span`].
+    #[track_caller]
     pub fn span(&self) -> &tracing::Span {
         self.ctx.span()
     }
