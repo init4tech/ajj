@@ -40,8 +40,8 @@ impl<S> From<crate::Router<S>> for IntoAxum<S> {
         Self {
             router,
             task_set: Default::default(),
-            rx_msg_id: Arc::new(AtomicU32::new(0)),
-            tx_msg_id: Arc::new(AtomicU32::new(0)),
+            rx_msg_id: Arc::new(AtomicU32::new(1)),
+            tx_msg_id: Arc::new(AtomicU32::new(1)),
         }
     }
 }
@@ -52,8 +52,8 @@ impl<S> IntoAxum<S> {
         Self {
             router,
             task_set: handle.into(),
-            rx_msg_id: Arc::new(AtomicU32::new(0)),
-            tx_msg_id: Arc::new(AtomicU32::new(0)),
+            rx_msg_id: Arc::new(AtomicU32::new(1)),
+            tx_msg_id: Arc::new(AtomicU32::new(1)),
         }
     }
 }

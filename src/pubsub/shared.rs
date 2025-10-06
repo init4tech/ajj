@@ -84,8 +84,8 @@ impl ConnectionManager {
             next_id: AtomicU64::new(0).into(),
             router,
             notification_buffer_per_task: DEFAULT_NOTIFICATION_BUFFER_PER_CLIENT,
-            tx_msg_id: Arc::new(AtomicU32::new(0)),
-            rx_msg_id: Arc::new(AtomicU32::new(0)),
+            tx_msg_id: Arc::new(AtomicU32::new(1)),
+            rx_msg_id: Arc::new(AtomicU32::new(1)),
         }
     }
 
