@@ -12,7 +12,7 @@ use std::sync::{
 use tokio::{pin, runtime::Handle, select, sync::mpsc, task::JoinHandle};
 use tokio_stream::StreamExt;
 use tokio_util::sync::WaitForCancellationFutureOwned;
-use tracing::{debug, debug_span, error, trace, Instrument};
+use tracing::{debug, error, trace, Instrument};
 
 /// Default notification buffer size per task.
 pub const DEFAULT_NOTIFICATION_BUFFER_PER_CLIENT: usize = 16;
@@ -258,22 +258,7 @@ where
                      // possible, and then given to the Handler ctx. It
                      // will be populated with request-specific details
                      // (e.g. method) during ctx instantiation.
-                    let tracing = TracingInfo { service: router.service_name(), request_span: debug_span!(
-                        parent: None,
-                        "ajj.pubsub.RouteTask::call",
-                        "otel.kind" = "server",
-                        "rpc.system" = "jsonrpc",
-                        "rpc.jsonrpc.version" = "2.0",
-                        "rpc.service" = router.service_name(),
-                        conn_id = self.conn_id,
-                        notifications_enabled = true,
-                        "otel.name" = tracing::field::Empty,
-                        "rpc.jsonrpc.request_id" = tracing::field::Empty,
-                        "rpc.jsonrpc.error_code" = tracing::field::Empty,
-                        "rpc.jsonrpc.error_message" = tracing::field::Empty,
-                        "rpc.method" = tracing::field::Empty,
-                        params = tracing::field::Empty
-                    ) };
+                    let tracing = TracingInfo { service: router.service_name(), request_span: request_span!(name: "ajj.pubsub.RouteTask::call", router: &router, with_notifications) };
 
                     let ctx =
                     HandlerCtx::new(
@@ -284,12 +269,10 @@ where
 
                     let span = ctx.span().clone();
                     span.in_scope(|| {
-                        // https://github.com/open-telemetry/semantic-conventions/blob/d66109ff41e75f49587114e5bff9d101b87f40bd/docs/rpc/rpc-spans.md#events
-                        debug!(
-                            "rpc.message.id" = rx_msg_id.fetch_add(1, Ordering::Relaxed),
-                            "rpc.message.type" = "RECEIVED",
-                            "rpc.message.uncompressed_size" = item_bytes,
-                            "rpc.message"
+                        message_event!(
+                            @received,
+                            counter: &rx_msg_id,
+                            bytes: item_bytes,
                         );
                     });
 
@@ -384,11 +367,10 @@ impl<T: Listener> WriteTask<T> {
                         break;
                     };
                     span.in_scope(|| {
-                        // https://github.com/open-telemetry/semantic-conventions/blob/d66109ff41e75f49587114e5bff9d101b87f40bd/docs/rpc/rpc-spans.md#events
-                        debug!(
-                            "rpc.message.id" = tx_msg_id.fetch_add(1, Ordering::Relaxed),
-                            "rpc.message.type" = "SENT",
-                            "rpc.message"
+                        message_event!(
+                            @sent,
+                            counter: &tx_msg_id,
+                            bytes: json.get().len(),
                         );
                     });
 

@@ -11,13 +11,9 @@ use bytes::Bytes;
 use std::{
     future::Future,
     pin::Pin,
-    sync::{
-        atomic::{AtomicU32, Ordering},
-        Arc,
-    },
+    sync::{atomic::AtomicU32, Arc},
 };
 use tokio::runtime::Handle;
-use tracing::{debug, debug_span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// A wrapper around an [`Router`] that implements the
@@ -70,21 +66,11 @@ where
         // This span is populated with as much detail as possible, and then
         // given to the Handler ctx. It will be populated with request-specific
         // details (e.g. method) during ctx instantiation.
-        let request_span = debug_span!(
+        let request_span = request_span!(
             // We could erase the parent here, however, axum or tower layers
             // may be creating per-request spans that we want to be children of.
-            "ajj.IntoAxum::call",
-            "otel.kind" = "server",
-            "rpc.system" = "jsonrpc",
-            "rpc.jsonrpc.version" = "2.0",
-            "rpc.service" = self.router.service_name(),
-            notifications_enabled = false,
-            "otel.name" = tracing::field::Empty,
-            "rpc.jsonrpc.request_id" = tracing::field::Empty,
-            "rpc.jsonrpc.error_code" = tracing::field::Empty,
-            "rpc.jsonrpc.error_message" = tracing::field::Empty,
-            "rpc.method" = tracing::field::Empty,
-            params = tracing::field::Empty
+            name: "ajj.IntoAxum::call",
+            router: &self.router,
         );
 
         HandlerCtx::new(
@@ -119,12 +105,10 @@ where
 
             // https://github.com/open-telemetry/semantic-conventions/blob/main/docs/rpc/rpc-spans.md#message-event
             let req = ctx.span().in_scope(|| {
-                //// https://github.com/open-telemetry/semantic-conventions/blob/d66109ff41e75f49587114e5bff9d101b87f40bd/docs/rpc/rpc-spans.md#events
-                debug!(
-                    "rpc.message.id" = self.rx_msg_id.fetch_add(1, Ordering::Relaxed),
-                    "rpc.message.type" = "RECEIVED",
-                    "rpc.message.uncompressed_size" = bytes.len(),
-                    "rpc.message"
+                message_event!(
+                    @received,
+                    counter: &self.rx_msg_id,
+                    bytes: bytes.len(),
                 );
 
                 // If the inbound data is not currently parsable, we
@@ -143,11 +127,10 @@ where
                 let body = Box::<str>::from(response);
 
                 span.in_scope(|| {
-                    // https://github.com/open-telemetry/semantic-conventions/blob/d66109ff41e75f49587114e5bff9d101b87f40bd/docs/rpc/rpc-spans.md#events
-                    debug!(
-                        "rpc.message.id" = self.tx_msg_id.fetch_add(1, Ordering::Relaxed),
-                        "rpc.message.type" = "SENT",
-                        "rpc.message.uncompressed_size" = body.len(),
+                    message_event!(
+                        @sent,
+                        counter: &self.tx_msg_id,
+                        bytes: body.len(),
                     );
                 });
 
