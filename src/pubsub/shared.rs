@@ -258,7 +258,7 @@ where
                      // possible, and then given to the Handler ctx. It
                      // will be populated with request-specific details
                      // (e.g. method) during ctx instantiation.
-                    let tracing = TracingInfo { service: router.service_name(), request_span: request_span!(@noparent, name: "ajj.pubsub.RouteTask::call", router: &router, with_notifications) };
+                    let tracing = TracingInfo::new(router.service_name());
 
                     let ctx =
                     HandlerCtx::new(
@@ -266,6 +266,7 @@ where
                         children.clone(),
                         tracing,
                     );
+                    ctx.init_request_span(&router, None);
 
                     let span = ctx.span().clone();
                     span.in_scope(|| {

@@ -1,12 +1,15 @@
-use crate::{pubsub::WriteItem, types::Request, RpcSend, TaskSet};
+use crate::{pubsub::WriteItem, types::Request, Router, RpcSend, TaskSet};
+use ::tracing::info_span;
+use opentelemetry::trace::TraceContextExt;
 use serde_json::value::RawValue;
-use std::future::Future;
+use std::{future::Future, sync::OnceLock};
 use tokio::{
     sync::mpsc::{self, error::SendError},
     task::JoinHandle,
 };
 use tokio_util::sync::WaitForCancellationFutureOwned;
 use tracing::{enabled, error, Level};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Errors that can occur when sending notifications.
 #[derive(thiserror::Error, Debug)]
@@ -27,24 +30,115 @@ impl From<SendError<WriteItem>> for NotifyError {
 
 /// Tracing information for OpenTelemetry. This struct is used to store
 /// information about the current request that can be used for tracing.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 #[non_exhaustive]
 pub struct TracingInfo {
     /// The OpenTelemetry service name.
     pub service: &'static str,
 
-    /// The request span.
-    pub request_span: tracing::Span,
+    /// The open telemetry Context,
+    pub context: Option<opentelemetry::context::Context>,
+
+    /// The tracing span for this request.
+    span: OnceLock<tracing::Span>,
+}
+
+impl Clone for TracingInfo {
+    fn clone(&self) -> Self {
+        Self {
+            service: self.service,
+            context: self.context.clone(),
+            span: OnceLock::new(),
+        }
+    }
 }
 
 impl TracingInfo {
+    /// Create a new tracing info with the given service name and no context.
+    #[allow(dead_code)] // used in some features
+    pub fn new(service: &'static str) -> Self {
+        Self {
+            service,
+            context: None,
+            span: OnceLock::new(),
+        }
+    }
+
+    /// Create a new tracing info with the given service name and context.
+    pub fn new_with_context(
+        service: &'static str,
+        context: opentelemetry::context::Context,
+    ) -> Self {
+        Self {
+            service,
+            context: Some(context),
+            span: OnceLock::new(),
+        }
+    }
+
+    /// Create a request span for a handler invocation.
+    fn init_request_span<S>(
+        &self,
+        router: &Router<S>,
+        with_notifications: bool,
+        parent: Option<&tracing::Span>,
+    ) -> &tracing::Span
+    where
+        S: Clone + Send + Sync + 'static,
+    {
+        // This span is populated with as much detail as possible, and then
+        // given to the Request. It will be populated with request-specific
+        // details (e.g. method) during request setup.
+        self.span.get_or_init(|| {
+            let span = info_span!(
+                parent: parent.and_then(|p| p.id()),
+                "AjjRequest",
+                "otel.kind" = "server",
+                "rpc.system" = "jsonrpc",
+                "rpc.jsonrpc.version" = "2.0",
+                "rpc.service" = router.service_name(),
+                notifications_enabled = with_notifications,
+                "trace_id" = ::tracing::field::Empty,
+                "otel.name" = ::tracing::field::Empty,
+                "otel.status_code" = ::tracing::field::Empty,
+                "rpc.jsonrpc.request_id" = ::tracing::field::Empty,
+                "rpc.jsonrpc.error_code" = ::tracing::field::Empty,
+                "rpc.jsonrpc.error_message" = ::tracing::field::Empty,
+                "rpc.method" = ::tracing::field::Empty,
+                params = ::tracing::field::Empty,
+            );
+            if let Some(context) = &self.context {
+                let _ = span.set_parent(context.clone());
+
+                span.record(
+                    "trace_id",
+                    context.span().span_context().trace_id().to_string(),
+                );
+            }
+
+            span
+        })
+    }
+
+    /// Get a reference to the tracing span for this request.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if the span has not been initialized via
+    /// [`Self::init_request_span`].
+    #[track_caller]
+    fn request_span(&self) -> &tracing::Span {
+        self.span.get().expect("span not initialized")
+    }
+
     /// Create a mock tracing info for testing.
     #[cfg(test)]
     pub fn mock() -> Self {
-        use tracing::debug_span;
+        use tracing::info_span;
         Self {
             service: "test",
-            request_span: debug_span!("test"),
+            context: None,
+            span: OnceLock::new(),
         }
     }
 }
@@ -104,8 +198,9 @@ impl HandlerCtx {
     }
 
     /// Get a reference to the tracing span for this handler context.
-    pub const fn span(&self) -> &tracing::Span {
-        &self.tracing.request_span
+    #[track_caller]
+    pub fn span(&self) -> &tracing::Span {
+        &self.tracing.request_span()
     }
 
     /// Set the tracing information for this handler context.
@@ -121,6 +216,19 @@ impl HandlerCtx {
             .as_ref()
             .map(|tx| !tx.is_closed())
             .unwrap_or_default()
+    }
+
+    /// Create a request span for a handler invocation.
+    pub fn init_request_span<S>(
+        &self,
+        router: &Router<S>,
+        parent: Option<&tracing::Span>,
+    ) -> &tracing::Span
+    where
+        S: Clone + Send + Sync + 'static,
+    {
+        self.tracing_info()
+            .init_request_span(router, self.notifications_enabled(), parent)
     }
 
     /// Notify a client of an event.
@@ -298,7 +406,7 @@ impl HandlerArgs {
     }
 
     /// Get a reference to the tracing span for this handler invocation.
-    pub const fn span(&self) -> &tracing::Span {
+    pub fn span(&self) -> &tracing::Span {
         self.ctx.span()
     }
 

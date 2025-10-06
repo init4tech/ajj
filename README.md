@@ -81,7 +81,6 @@ semantic conventions] for JSON-RPC servers with the following exception:
 
 - The `server.address` attribute is NOT set, as the server address is not always
   known to the ajj system.
--
 
 ## Note on code provenance
 

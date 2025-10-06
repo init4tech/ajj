@@ -333,20 +333,25 @@ where
         let mut fut = BatchFuture::new_with_capacity(inbound.single(), inbound.len());
         // According to spec, non-parsable requests should still receive a
         // response.
-        let span = debug_span!(parent: ctx.span(), "BatchFuture::poll", reqs = inbound.len(), futs = tracing::field::Empty);
+        let batch_span = debug_span!(parent: ctx.span(), "BatchFuture::poll", reqs = inbound.len(), futs = tracing::field::Empty);
 
-        for (batch_idx, req) in inbound.iter().enumerate() {
+        for req in inbound.iter() {
             let req = req.map(|req| {
-                let span = debug_span!(parent: &span, "RouteFuture::poll", batch_idx, method = req.method(), id = ?req.id());
-                let args = HandlerArgs::new(ctx.clone(), req);
+                // Cloning here resets the `TracingInfo`, which means each
+                // ctx has a separate span with similar metadata.
+                let ctx = ctx.clone();
+                let request_span = ctx.init_request_span(&self, Some(&batch_span)).clone();
+
+                // Several span fields are populated in `HandlerArgs::new`.
+                let args = HandlerArgs::new(ctx, req);
                 self.inner
                     .call_with_state(args, state.clone())
-                    .with_span(span)
+                    .with_span(request_span)
             });
             fut.push_parse_result(req);
         }
-        span.record("futs", fut.len());
-        fut.with_span(span)
+        batch_span.record("futs", fut.len());
+        fut.with_span(batch_span)
     }
 
     /// Nest this router into a new Axum router, with the specified path and the currently-running

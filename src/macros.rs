@@ -54,52 +54,12 @@ macro_rules! unwrap_infallible {
     };
 }
 
-/// Set up an initial tracing span for a request handler.
-macro_rules! request_span {
-    (parent: $parent:expr, $name:literal, $router:expr, notifications: $notifications:literal,) => {
-        ::tracing::debug_span!(
-            parent: $parent,
-            $name,
-            "otel.kind" = "server",
-            "rpc.system" = "jsonrpc",
-            "rpc.jsonrpc.version" = "2.0",
-            "rpc.service" = $router.service_name(),
-            notifications_enabled = $notifications,
-            "trace_id" = ::tracing::field::Empty,
-            "otel.name" = ::tracing::field::Empty,
-            "otel.status" = ::tracing::field::Empty,
-            "rpc.jsonrpc.request_id" = ::tracing::field::Empty,
-            "rpc.jsonrpc.error_code" = ::tracing::field::Empty,
-            "rpc.jsonrpc.error_message" = ::tracing::field::Empty,
-            "rpc.method" = ::tracing::field::Empty,
-            params = ::tracing::field::Empty,
-        )
-    };
-
-
-    (parent: $parent:expr, name: $name:literal, router: $router:expr,) => {
-        request_span!(parent: $parent, $name, $router, notifications: false,)
-    };
-
-    (parent: $parent:expr, name: $name:literal, router: $router:expr, with_notifications) => {
-        request_span!(parent: $parent, $name, $router, notifications: true,)
-    };
-
-    (@noparent, name: $name:literal, router: $router:expr,) => {
-        request_span!(parent: None,, $name, $router, notifications: false,)
-    };
-
-    (@noparent, name: $name:literal, router: $router:expr, with_notifications) => {
-        request_span!(parent: None, $name, $router, notifications: true,)
-    };
-}
-
 /// Log a message event to the current span.
 ///
 /// See <https://github.com/open-telemetry/semantic-conventions/blob/d66109ff41e75f49587114e5bff9d101b87f40bd/docs/rpc/rpc-spans.md#events>
 macro_rules! message_event {
     ($type:literal, counter: $counter:expr, bytes: $bytes:expr,) => {{
-        ::tracing::debug!(
+        ::tracing::info!(
             "rpc.message.id" = $counter.fetch_add(1, ::std::sync::atomic::Ordering::Relaxed),
             "rpc.message.type" = $type,
             "rpc.message.uncompressed_size" = $bytes,
