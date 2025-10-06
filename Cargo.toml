@@ -15,6 +15,7 @@ repository = "https://github.com/init4tech/ajj"
 
 [dependencies]
 bytes = "1.9.0"
+opentelemetry = "0.31.0"
 pin-project = "1.1.8"
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = { version = "1.0.135", features = ["raw_value"] }
@@ -23,10 +24,12 @@ tokio = { version = "1.43.0", features = ["sync", "rt", "macros"] }
 tokio-util = { version = "0.7.13", features = ["io", "rt"] }
 tower = { version = "0.5.2", features = ["util"] }
 tracing = "0.1.41"
+tracing-opentelemetry = "0.32.0"
 
 # axum
 axum = { version = "0.8.1", optional = true }
 mime = { version = "0.3.17", optional = true }
+opentelemetry-http = { version = "0.31.0", optional = true }
 
 # pubsub
 tokio-stream = { version = "0.1.17", optional = true }
@@ -51,7 +54,7 @@ eyre = "0.6.12"
 
 [features]
 default = ["axum", "ws", "ipc"]
-axum = ["dep:axum", "dep:mime"]
+axum = ["dep:axum", "dep:mime", "dep:opentelemetry-http"]
 pubsub = ["dep:tokio-stream", "axum?/ws"]
 ipc = ["pubsub", "dep:interprocess"]
 ws = ["pubsub", "dep:tokio-tungstenite", "dep:futures-util"]

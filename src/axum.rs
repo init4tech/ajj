@@ -18,6 +18,7 @@ use std::{
 };
 use tokio::runtime::Handle;
 use tracing::{debug, debug_span};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// A wrapper around an [`Router`] that implements the
 /// [`axum::handler::Handler`] trait. This struct is an implementation detail
@@ -106,6 +107,11 @@ where
     fn call(self, req: axum::extract::Request, state: S) -> Self::Future {
         Box::pin(async move {
             let ctx = self.ctx();
+
+            let parent_context = opentelemetry::global::get_text_map_propagator(|propagator| {
+                propagator.extract(&opentelemetry_http::HeaderExtractor(req.headers()))
+            });
+            ctx.span().set_parent(parent_context).unwrap();
 
             let Ok(bytes) = Bytes::from_request(req, &state).await else {
                 return Box::<str>::from(Response::parse_error()).into_response();
