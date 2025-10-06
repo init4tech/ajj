@@ -77,10 +77,16 @@ See the [crate documentation on docs.rs] for more detailed examples.
 issues are found, please [open an issue]!
 
 `ajj` produces [`tracing`] spans and events that meet the [OpenTelemetry
-semantic conventions] for JSON-RPC servers with the following exception:
+semantic conventions] for JSON-RPC servers with the following exceptions:
 
 - The `server.address` attribute is NOT set, as the server address is not always
   known to the ajj system.
+- `rpc.message` events are included in AJJ system spans for the batch request,
+  which technically does not comply with semantic conventions. The semantic
+  conventions do not specify how to handle batch requests, and assume that each
+  message corresponds to a separate request. In AJJ, batch requests are a single
+  message, and result in a single `rpc.message` event at receipt and at
+  response.
 
 ## Note on code provenance
 
