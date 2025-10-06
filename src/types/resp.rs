@@ -1,8 +1,10 @@
 use crate::RpcSend;
+use opentelemetry::trace::Status;
 use serde::{ser::SerializeMap, Serialize, Serializer};
 use serde_json::value::{to_raw_value, RawValue};
 use std::borrow::Cow;
 use std::fmt;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 const INTERNAL_ERROR: Cow<'_, str> = Cow::Borrowed("Internal error");
 
@@ -80,9 +82,12 @@ where
         if let Some(e) = payload.as_error() {
             span.record("rpc.jsonrpc.error_code", e.code);
             span.record("rpc.jsonrpc.error_message", e.message.as_ref());
+            span.set_status(Status::Error {
+                description: e.message.clone(),
+            });
         }
 
-        id.map(|id| Self { id, payload }.to_json())
+        id.map(move |id| Self { id, payload }.to_json())
     }
 
     pub(crate) fn to_json(&self) -> Box<RawValue> {
