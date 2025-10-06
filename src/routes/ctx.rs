@@ -56,7 +56,7 @@ impl Clone for TracingInfo {
 impl TracingInfo {
     /// Create a new tracing info with the given service name and no context.
     #[allow(dead_code)] // used in some features
-    pub fn new(service: &'static str) -> Self {
+    pub const fn new(service: &'static str) -> Self {
         Self {
             service,
             context: None,
@@ -65,7 +65,7 @@ impl TracingInfo {
     }
 
     /// Create a new tracing info with the given service name and context.
-    pub fn new_with_context(
+    pub const fn new_with_context(
         service: &'static str,
         context: opentelemetry::context::Context,
     ) -> Self {
@@ -133,8 +133,8 @@ impl TracingInfo {
 
     /// Create a mock tracing info for testing.
     #[cfg(test)]
-    pub fn mock() -> Self {
-        use tracing::info_span;
+    pub const fn mock() -> Self {
+        
         Self {
             service: "test",
             context: None,
@@ -200,7 +200,7 @@ impl HandlerCtx {
     /// Get a reference to the tracing span for this handler context.
     #[track_caller]
     pub fn span(&self) -> &tracing::Span {
-        &self.tracing.request_span()
+        self.tracing.request_span()
     }
 
     /// Set the tracing information for this handler context.
