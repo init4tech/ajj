@@ -30,7 +30,7 @@ impl From<SendError<WriteItem>> for NotifyError {
 
 /// Tracing information for OpenTelemetry. This struct is used to store
 /// information about the current request that can be used for tracing.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct TracingInfo {
     /// The OpenTelemetry service name.
@@ -41,16 +41,6 @@ pub struct TracingInfo {
 
     /// The tracing span for this request.
     span: OnceLock<tracing::Span>,
-}
-
-impl Clone for TracingInfo {
-    fn clone(&self) -> Self {
-        Self {
-            service: self.service,
-            context: self.context.clone(),
-            span: OnceLock::new(),
-        }
-    }
 }
 
 impl TracingInfo {
@@ -76,6 +66,43 @@ impl TracingInfo {
         }
     }
 
+    fn make_span<S>(
+        &self,
+        router: &Router<S>,
+        with_notifications: bool,
+        parent: Option<&tracing::Span>,
+    ) -> tracing::Span
+    where
+        S: Clone + Send + Sync + 'static,
+    {
+        let span = info_span!(
+            parent: parent.and_then(|p| p.id()),
+            "AjjRequest",
+            "otel.kind" = "server",
+            "rpc.system" = "jsonrpc",
+            "rpc.jsonrpc.version" = "2.0",
+            "rpc.service" = router.service_name(),
+            notifications_enabled = with_notifications,
+            "trace_id" = ::tracing::field::Empty,
+            "otel.name" = ::tracing::field::Empty,
+            "otel.status_code" = ::tracing::field::Empty,
+            "rpc.jsonrpc.request_id" = ::tracing::field::Empty,
+            "rpc.jsonrpc.error_code" = ::tracing::field::Empty,
+            "rpc.jsonrpc.error_message" = ::tracing::field::Empty,
+            "rpc.method" = ::tracing::field::Empty,
+            params = ::tracing::field::Empty,
+        );
+        if let Some(context) = &self.context {
+            let _ = span.set_parent(context.clone());
+
+            span.record(
+                "trace_id",
+                context.span().span_context().trace_id().to_string(),
+            );
+        }
+        span
+    }
+
     /// Create a request span for a handler invocation.
     fn init_request_span<S>(
         &self,
@@ -89,35 +116,23 @@ impl TracingInfo {
         // This span is populated with as much detail as possible, and then
         // given to the Request. It will be populated with request-specific
         // details (e.g. method) during request setup.
-        self.span.get_or_init(|| {
-            let span = info_span!(
-                parent: parent.and_then(|p| p.id()),
-                "AjjRequest",
-                "otel.kind" = "server",
-                "rpc.system" = "jsonrpc",
-                "rpc.jsonrpc.version" = "2.0",
-                "rpc.service" = router.service_name(),
-                notifications_enabled = with_notifications,
-                "trace_id" = ::tracing::field::Empty,
-                "otel.name" = ::tracing::field::Empty,
-                "otel.status_code" = ::tracing::field::Empty,
-                "rpc.jsonrpc.request_id" = ::tracing::field::Empty,
-                "rpc.jsonrpc.error_code" = ::tracing::field::Empty,
-                "rpc.jsonrpc.error_message" = ::tracing::field::Empty,
-                "rpc.method" = ::tracing::field::Empty,
-                params = ::tracing::field::Empty,
-            );
-            if let Some(context) = &self.context {
-                let _ = span.set_parent(context.clone());
+        self.span
+            .get_or_init(|| self.make_span(router, with_notifications, parent))
+    }
 
-                span.record(
-                    "trace_id",
-                    context.span().span_context().trace_id().to_string(),
-                );
-            }
-
-            span
-        })
+    /// Create a child tracing info for a new handler context.
+    pub fn child<S: Clone + Send + Sync + 'static>(
+        &self,
+        router: &Router<S>,
+        with_notifications: bool,
+        parent: Option<&tracing::Span>,
+    ) -> Self {
+        let span = self.make_span(router, with_notifications, parent);
+        Self {
+            service: self.service,
+            context: self.context.clone(),
+            span: OnceLock::from(span),
+        }
     }
 
     /// Get a reference to the tracing span for this request.
@@ -183,6 +198,24 @@ impl HandlerCtx {
             notifications: None,
             tasks: TaskSet::default(),
             tracing: TracingInfo::mock(),
+        }
+    }
+
+    /// Create a child handler context for a new handler invocation.
+    ///
+    /// This is used when handling batch requests, to give each handler
+    /// its own context.
+    pub fn child_ctx<S: Clone + Send + Sync + 'static>(
+        &self,
+        router: &Router<S>,
+        parent: Option<&tracing::Span>,
+    ) -> Self {
+        Self {
+            notifications: self.notifications.clone(),
+            tasks: self.tasks.clone(),
+            tracing: self
+                .tracing
+                .child(router, self.notifications_enabled(), parent),
         }
     }
 

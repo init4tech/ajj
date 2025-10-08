@@ -337,10 +337,10 @@ where
 
         for req in inbound.iter() {
             let req = req.map(|req| {
-                // Cloning here resets the `TracingInfo`, which means each
+                // This resets the `TracingInfo`, which means each
                 // ctx has a separate span with similar metadata.
-                let ctx = ctx.clone();
-                let request_span = ctx.init_request_span(self, Some(&batch_span)).clone();
+                let ctx = ctx.child_ctx(self, Some(&batch_span));
+                let request_span = ctx.span().clone();
 
                 // Several span fields are populated in `HandlerArgs::new`.
                 let args = HandlerArgs::new(ctx, req);

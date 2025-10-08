@@ -104,13 +104,17 @@ async fn test_ping<T: TestClient>(client: &mut T) {
 
 /// basic tests of the test router
 pub async fn basic_tests<T: TestClient>(client: &mut T) {
-    test_ping(client).await;
+    timeout(Duration::from_secs(10), async move {
+        test_ping(client).await;
 
-    test_double(client).await;
+        test_double(client).await;
 
-    test_call_me_later(client).await;
+        test_call_me_later(client).await;
 
-    test_notification(client).await;
+        test_notification(client).await;
+    })
+    .await
+    .unwrap();
 }
 
 /// Test when a full batch request fails to parse
@@ -205,11 +209,15 @@ async fn batch_contains_only_notifications<T: TestClient>(client: &mut T) {
 
 /// Test of batch requests
 pub async fn batch_tests<T: TestClient>(client: &mut T) {
-    batch_parse_fail(client).await;
+    timeout(Duration::from_secs(10), async move {
+        batch_parse_fail(client).await;
 
-    batch_single_req_parse_fail(client).await;
+        batch_single_req_parse_fail(client).await;
 
-    batch_contains_notification(client).await;
+        batch_contains_notification(client).await;
 
-    batch_contains_only_notifications(client).await;
+        batch_contains_only_notifications(client).await;
+    })
+    .await
+    .unwrap();
 }
