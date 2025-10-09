@@ -159,6 +159,8 @@ mod axum;
 mod error;
 pub use error::RegistrationError;
 
+pub(crate) mod metrics;
+
 mod primitives;
 pub use primitives::{BorrowedRpcObject, MethodId, RpcBorrow, RpcObject, RpcRecv, RpcSend};
 

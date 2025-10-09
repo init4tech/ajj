@@ -108,7 +108,7 @@ where
 
     /// Get the OpenTelemetry service name for this router.
     pub fn service_name(&self) -> &'static str {
-        self.inner.service_name.unwrap_or("ajj")
+        self.inner.service_name()
     }
 
     /// If this router is the only reference to its inner state, return the
@@ -330,7 +330,8 @@ where
         inbound: InboundData,
         state: S,
     ) -> BatchFuture {
-        let mut fut = BatchFuture::new_with_capacity(inbound.single(), inbound.len());
+        let mut fut =
+            BatchFuture::new_with_capacity(inbound.single(), self.service_name(), inbound.len());
         // According to spec, non-parsable requests should still receive a
         // response.
         let batch_span = debug_span!(parent: ctx.span(), "BatchFuture::poll", reqs = inbound.len(), futs = tracing::field::Empty);
@@ -557,6 +558,11 @@ impl<S> RouterInner<S> {
         }
     }
 
+    /// Get the OpenTelemetry service name for this router.
+    fn service_name(&self) -> &'static str {
+        self.service_name.unwrap_or("ajj")
+    }
+
     /// Get the next available ID.
     fn get_id(&mut self) -> MethodId {
         self.last_id += 1;
@@ -641,6 +647,9 @@ impl<S> RouterInner<S> {
     #[track_caller]
     pub(crate) fn call_with_state(&self, args: HandlerArgs, state: S) -> RouteFuture {
         let method = args.req().method();
+
+        crate::metrics::record_call(self.service_name(), method);
+
         self.method_by_name(method)
             .unwrap_or(&self.fallback)
             .call_with_state(args, state)

@@ -119,6 +119,9 @@ pub struct BatchFuture {
     /// Whether the batch was a single request.
     single: bool,
 
+    /// The service name, for tracing and metrics.
+    service_name: &'static str,
+
     /// The span (if any).
     span: Option<tracing::Span>,
 }
@@ -134,11 +137,16 @@ impl fmt::Debug for BatchFuture {
 
 impl BatchFuture {
     /// Create a new batch future with a capacity.
-    pub(crate) fn new_with_capacity(single: bool, capacity: usize) -> Self {
+    pub(crate) fn new_with_capacity(
+        single: bool,
+        service_name: &'static str,
+        capacity: usize,
+    ) -> Self {
         Self {
             futs: BatchFutureInner::Prepping(Vec::with_capacity(capacity)),
             resps: Vec::with_capacity(capacity),
             single,
+            service_name,
             span: None,
         }
     }
@@ -166,6 +174,7 @@ impl BatchFuture {
 
     /// Push a parse error into the batch.
     pub(crate) fn push_parse_error(&mut self) {
+        crate::metrics::record_parse_error(self.service_name);
         self.push_resp(Response::parse_error());
     }
 
@@ -196,6 +205,7 @@ impl std::future::Future for BatchFuture {
         if matches!(self.futs, BatchFutureInner::Prepping(_)) {
             // SPEC: empty arrays are invalid
             if self.futs.is_empty() && self.resps.is_empty() {
+                crate::metrics::record_parse_error(self.service_name);
                 return Poll::Ready(Some(Response::parse_error()));
             }
             self.futs.run();
@@ -227,7 +237,11 @@ impl std::future::Future for BatchFuture {
                     // SPEC: single requests return a single response
                     // Batch requests return an array of responses
                     let resp = if *this.single {
-                        this.resps.pop().unwrap_or_else(Response::parse_error)
+                        this.resps.pop().unwrap_or_else(|| {
+                            // this should never happen, but just in case...
+                            crate::metrics::record_parse_error(this.service_name);
+                            Response::parse_error()
+                        })
                     } else {
                         // otherwise, we have an array of responses
                         serde_json::value::to_raw_value(&this.resps)

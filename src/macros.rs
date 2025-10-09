@@ -76,6 +76,179 @@ macro_rules! message_event {
     };
 }
 
+/// Implement a `Handler` call, with metrics recording and response building.
+macro_rules! impl_handler_call {
+    (@metrics, $success:expr, $id:expr, $service:expr, $method:expr) => {{
+        // Record the metrics.
+        $crate::metrics::record_execution($success, $service, $method);
+        $crate::metrics::record_output($id.is_some(), $service, $method);
+    }};
+
+    (@record_span, $span:expr, $payload:expr) => {
+        if let Some(e) = $payload.as_error() {
+            use tracing_opentelemetry::OpenTelemetrySpanExt;
+            $span.record("rpc.jsonrpc.error_code", e.code);
+            $span.record("rpc.jsonrpc.error_message", e.message.as_ref());
+            $span.set_status(::opentelemetry::trace::Status::Error {
+                description: e.message.clone(),
+            });
+        }
+    };
+
+    // Hit the metrics and return the payload if any.
+    (@finish $span:expr, $id:expr, $service:expr, $method:expr, $payload:expr) => {{
+        impl_handler_call!(@metrics, $payload.is_success(), $id, $service, $method);
+        impl_handler_call!(@record_span, $span, $payload);
+        return Response::build_response($id.as_deref(), $payload);
+    }};
+
+    (@unpack_params $span:expr, $id:expr, $service:expr, $method:expr, $req:expr) => {{
+            let Ok(params) = $req.deser_params() else {
+            impl_handler_call!(@finish $span, $id, $service, $method, &ResponsePayload::<(), ()>::invalid_params());
+        };
+        drop($req); // no longer needed
+        params
+    }};
+
+    (@unpack_struct_params $span:expr, $id:expr, $service:expr, $method:expr, $req:expr) => {{
+            let Ok(params) = $req.deser_params() else {
+            impl_handler_call!(@finish $span, $id, $service, $method, &ResponsePayload::<(), ()>::invalid_params());
+        };
+        drop($req); // no longer needed
+        params
+    }};
+
+    (@unpack $args:expr) => {{
+        let id = $args.id_owned();
+        let (ctx, req) = $args.into_parts();
+        let inst = ctx.span().clone();
+        let span = ctx.span().clone();
+        let method = req.method().to_string();
+        let service = ctx.service_name();
+
+        (id, ctx, inst, span, method, service, req)
+    }};
+
+    // NO ARGS
+    ($args:expr, $this:ident()) => {{
+        let (id, ctx, inst, span, method, service, req) = impl_handler_call!(@unpack $args);
+        drop(ctx); // no longer needed
+        drop(req); // no longer needed
+
+        Box::pin(
+            async move {
+                let payload: $crate::ResponsePayload<_, _> = $this().await.into();
+                impl_handler_call!(@finish span, id, service, &method, &payload);
+            }
+            .instrument(inst),
+        )
+    }};
+
+    // CTX only
+    ($args:expr, $this:ident(ctx)) => {{
+        let (id, ctx, inst, span, method, service, req) = impl_handler_call!(@unpack $args);
+        drop(req); // no longer needed
+
+        Box::pin(
+            async move {
+                let payload: $crate::ResponsePayload<_, _> = $this(ctx).await.into();
+                impl_handler_call!(@finish span, id, service, &method, &payload);
+            }
+            .instrument(inst),
+        )
+    }};
+
+
+    // PARAMS only
+    ($args:expr, $this:ident(params: $params_ty:ty)) => {{
+        let (id, ctx, inst, span, method, service, req) = impl_handler_call!(@unpack $args);
+        drop(ctx); // no longer needed
+
+        Box::pin(
+            async move {
+                let params: $params_ty = impl_handler_call!(@unpack_params span, id, service, &method, req);
+                let payload: $crate::ResponsePayload<_, _> = $this(params.into()).await.into();
+                impl_handler_call!(@finish span, id, service, &method, &payload);
+            }
+            .instrument(inst),
+        )
+    }};
+
+
+    // STATE only
+    ($args:expr, $this:ident($state:expr)) => {{
+        let (id, ctx, inst, span, method, service, req) = impl_handler_call!(@unpack $args);
+        drop(ctx); // no longer needed
+        drop(req); // no longer needed
+
+        Box::pin(
+            async move {
+                let payload: $crate::ResponsePayload<_, _> = $this($state).await.into();
+                impl_handler_call!(@finish span, id, service, &method, &payload);
+            }
+            .instrument(inst),
+        )
+    }};
+
+
+    // CTX and PARAMS
+    ($args:expr, $this:ident(ctx, params: $params_ty:ty)) => {{
+        let (id, ctx, inst, span, method, service, req) = impl_handler_call!(@unpack $args);
+
+        Box::pin(
+            async move {
+                let params: $params_ty = impl_handler_call!(@unpack_params span, id, service, &method, req);
+                let payload: $crate::ResponsePayload<_, _> = $this(ctx, params.into()).await.into();
+                impl_handler_call!(@finish span, id, service, &method, &payload);
+            }
+            .instrument(inst),
+        )
+    }};
+
+    // CTX and STATE
+    ($args:expr, $this:ident(ctx, $state:expr)) => {{
+        let (id, ctx, inst, span, method, service, req) = impl_handler_call!(@unpack $args);
+        drop(req); // no longer needed
+
+        Box::pin(
+            async move {
+                let payload: $crate::ResponsePayload<_, _> = $this(ctx, $state).await.into();
+                impl_handler_call!(@finish span, id, service, &method, &payload);
+            }
+            .instrument(inst),
+        )
+    }};
+
+    // PARAMS and STATE
+    ($args:expr, $this:ident(params: $params_ty:ty, $state:expr)) => {{
+        let (id, ctx, inst, span, method, service, req) = impl_handler_call!(@unpack $args);
+        drop(ctx); // no longer needed
+
+        Box::pin(
+            async move {
+                let params: $params_ty = impl_handler_call!(@unpack_params span, id, service, &method, req);
+                let payload: $crate::ResponsePayload<_, _> = $this(params.into(), $state).await.into();
+                impl_handler_call!(@finish span, id, service, &method, &payload);
+            }
+            .instrument(inst),
+        )
+    }};
+
+    // CTX and PARAMS and STATE
+    ($args:expr, $this:ident(ctx, params: $params_ty:ty, $state:expr)) => {{
+        let (id, ctx, inst, span, method, service, req) = impl_handler_call!(@unpack $args);
+
+        Box::pin(
+            async move {
+                let params: $params_ty = impl_handler_call!(@unpack_params span, id, service, &method, req);
+                let payload: $crate::ResponsePayload<_, _> = $this(ctx, params.into(), $state).await.into();
+                impl_handler_call!(@finish span, id, service, &method, &payload);
+            }
+            .instrument(inst),
+        )
+    }};
+}
+
 // Some code is this file is reproduced under the terms of the MIT license. It
 // originates from the `axum` crate. The original source code can be found at
 // the following URL, and the original license is included below.

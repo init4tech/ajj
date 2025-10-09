@@ -40,6 +40,7 @@ interprocess = { version = "2.2.2", features = ["async", "tokio"], optional = tr
 # ws
 tokio-tungstenite = { version = "0.26.1", features = ["rustls-tls-webpki-roots"], optional = true }
 futures-util = { version = "0.3.31", optional = true }
+metrics = "0.24.2"
 
 [dev-dependencies]
 ajj = { path = "./", features = ["axum", "ws", "ipc"] }

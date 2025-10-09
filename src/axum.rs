@@ -87,6 +87,7 @@ where
             ctx.init_request_span(&self.router, Some(&Span::current()));
 
             let Ok(bytes) = Bytes::from_request(req, &state).await else {
+                crate::metrics::record_parse_error(self.router.service_name());
                 return Box::<str>::from(Response::parse_error()).into_response();
             };
 

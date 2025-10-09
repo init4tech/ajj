@@ -225,7 +225,7 @@ impl HandlerCtx {
     }
 
     /// Get the OpenTelemetry service name for this handler context.
-    pub const fn otel_service_name(&self) -> &'static str {
+    pub const fn service_name(&self) -> &'static str {
         self.tracing.service
     }
 
@@ -466,6 +466,6 @@ impl HandlerArgs {
 
     /// Get the OpenTelemetry span name for this handler invocation.
     pub fn otel_span_name(&self) -> String {
-        format!("{}/{}", self.ctx.otel_service_name(), self.req.method())
+        format!("{}/{}", self.ctx.service_name(), self.req.method())
     }
 }
