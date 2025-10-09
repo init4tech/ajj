@@ -464,8 +464,18 @@ impl HandlerArgs {
         self.req.id_owned()
     }
 
+    /// Get the method of the JSON-RPC request.
+    pub fn method(&self) -> &str {
+        self.req.method()
+    }
+
     /// Get the OpenTelemetry span name for this handler invocation.
     pub fn otel_span_name(&self) -> String {
         format!("{}/{}", self.ctx.service_name(), self.req.method())
+    }
+
+    /// Get the service name for this handler invocation.
+    pub const fn service_name(&self) -> &'static str {
+        self.ctx.service_name()
     }
 }

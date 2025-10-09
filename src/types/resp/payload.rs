@@ -8,9 +8,8 @@ const INTERNAL_ERROR: Cow<'_, str> = Cow::Borrowed("Internal error");
 
 /// A JSON-RPC 2.0 response payload.
 ///
-/// This enum covers both the success and error cases of a JSON-RPC 2.0
-/// response. It is used to represent the `result` and `error` fields of a
-/// response object.
+/// This is a thin wrapper around a [`Result`] type containing either
+/// the successful payload or an error payload.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct ResponsePayload<Payload, ErrData>(pub Result<Payload, ErrorPayload<ErrData>>);

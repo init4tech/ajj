@@ -440,7 +440,7 @@ pub struct OutputResponsePayload {
     _sealed: (),
 }
 
-/// Takes nothing, returns ResponsePayload
+// Takes nothing, returns ResponsePayload
 impl<F, Fut, Payload, ErrData, S> Handler<(OutputResponsePayload,), S> for F
 where
     F: FnOnce() -> Fut + Clone + Send + Sync + 'static,
@@ -455,7 +455,7 @@ where
     }
 }
 
-/// Takes Ctx, returns ResponsePayload
+// Takes Ctx, returns ResponsePayload
 impl<F, Fut, Payload, ErrData, S> Handler<(OutputResponsePayload, HandlerCtx), S> for F
 where
     F: FnOnce(HandlerCtx) -> Fut + Clone + Send + Sync + 'static,
@@ -470,7 +470,7 @@ where
     }
 }
 
-/// Takes Params, returns ResponsePayload
+// Takes Params, returns ResponsePayload
 impl<F, Fut, Input, Payload, ErrData, S> Handler<(OutputResponsePayload, PhantomParams<Input>), S>
     for F
 where
@@ -487,7 +487,7 @@ where
     }
 }
 
-/// Takes Params<Params>, returns ResponsePayload
+// Takes Params<Params>, returns ResponsePayload
 impl<F, Fut, Input, Payload, ErrData, S> Handler<(OutputResponsePayload, Params<Input>), S> for F
 where
     F: FnOnce(Params<Input>) -> Fut + Clone + Send + Sync + 'static,
@@ -503,7 +503,7 @@ where
     }
 }
 
-/// Takes State, returns ResponsePayload
+// Takes State, returns ResponsePayload
 impl<F, Fut, Payload, ErrData, S> Handler<(OutputResponsePayload, PhantomState<S>), S> for F
 where
     F: FnOnce(S) -> Fut + Clone + Send + Sync + 'static,
@@ -519,7 +519,7 @@ where
     }
 }
 
-/// Takes State<State>, returns ResponsePayload
+// Takes State<State>, returns ResponsePayload
 impl<F, Fut, Payload, ErrData, S> Handler<(OutputResponsePayload, State<S>), S> for F
 where
     F: FnOnce(State<S>) -> Fut + Clone + Send + Sync + 'static,
@@ -535,7 +535,7 @@ where
     }
 }
 
-/// Takes Ctx, Params, returns ResponsePayload
+// Takes Ctx, Params, returns ResponsePayload
 impl<F, Fut, Input, Payload, ErrData, S>
     Handler<(OutputResponsePayload, HandlerCtx, PhantomParams<Input>), S> for F
 where
@@ -552,7 +552,7 @@ where
     }
 }
 
-/// Takes Ctx, Params<Params>, returns ResponsePayload
+// Takes Ctx, Params<Params>, returns ResponsePayload
 impl<F, Fut, Input, Payload, ErrData, S>
     Handler<(OutputResponsePayload, HandlerCtx, Params<Input>), S> for F
 where
@@ -569,7 +569,7 @@ where
     }
 }
 
-/// Takes Params, State, returns ResponsePayload
+// Takes Params, State, returns ResponsePayload
 impl<F, Fut, Input, Payload, ErrData, S> Handler<(OutputResponsePayload, Input, S), S> for F
 where
     F: FnOnce(Input, S) -> Fut + Clone + Send + Sync + 'static,
@@ -586,7 +586,7 @@ where
     }
 }
 
-/// Takes Ctx, State, returns ResponsePayload
+// Takes Ctx, State, returns ResponsePayload
 impl<F, Fut, Payload, ErrData, S> Handler<(OutputResponsePayload, HandlerCtx, PhantomState<S>), S>
     for F
 where
@@ -603,7 +603,7 @@ where
     }
 }
 
-/// Takes Ctx, State<State>, returns ResponsePayload
+// Takes Ctx, State<State>, returns ResponsePayload
 impl<F, Fut, Payload, ErrData, S> Handler<(OutputResponsePayload, HandlerCtx, State<S>), S> for F
 where
     F: FnOnce(HandlerCtx, State<S>) -> Fut + Clone + Send + Sync + 'static,
@@ -619,7 +619,7 @@ where
     }
 }
 
-/// Takes Ctx, Params, State, returns ResponsePayload
+// Takes Ctx, Params, State, returns ResponsePayload
 impl<F, Fut, Input, Payload, ErrData, S> Handler<(OutputResponsePayload, HandlerCtx, Input, S), S>
     for F
 where
@@ -637,7 +637,7 @@ where
     }
 }
 
-/// Takes nothing, returns Result
+// Takes nothing, returns Result
 impl<F, Fut, Payload, ErrData, S> Handler<(OutputResult,), S> for F
 where
     F: FnOnce() -> Fut + Clone + Send + Sync + 'static,

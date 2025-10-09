@@ -52,8 +52,12 @@ impl Route {
     pub(crate) fn default_fallback() -> Self {
         Self::new(tower::service_fn(|args: HandlerArgs| async {
             let id = args.id_owned();
+            crate::metrics::record_method_not_found(
+                id.is_some(),
+                args.service_name(),
+                args.method(),
+            );
             drop(args); // no longer needed
-
             Ok(Response::maybe_method_not_found(id.as_deref()))
         }))
     }

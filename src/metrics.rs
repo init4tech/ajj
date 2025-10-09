@@ -33,6 +33,11 @@ pub(crate) const ROUTER_PARSE_ERRORS: &str = "ajj.router.parse_errors";
 pub(crate) const ROUTER_PARSE_ERRORS_HELP: &str =
     "Number of parse errors encountered by ajj router methods. This implies no response was sent.";
 
+/// Metric for counting method not found errors.
+pub(crate) const ROUTER_METHOD_NOT_FOUND: &str = "ajj.router.method_not_found";
+pub(crate) const ROUTER_METHOD_NOT_FOUND_HELP: &str =
+    "Number of times ajj router methods encountered a method not found error. This implies a response was sent.";
+
 static DESCRIBE: LazyLock<()> = LazyLock::new(|| {
     metrics::describe_counter!(ROUTER_CALLS, metrics::Unit::Count, ROUTER_CALLS_HELP);
     metrics::describe_counter!(ROUTER_ERRORS, metrics::Unit::Count, ROUTER_ERRORS_HELP);
@@ -55,6 +60,11 @@ static DESCRIBE: LazyLock<()> = LazyLock::new(|| {
         ROUTER_PARSE_ERRORS,
         metrics::Unit::Count,
         ROUTER_PARSE_ERRORS_HELP
+    );
+    metrics::describe_counter!(
+        ROUTER_METHOD_NOT_FOUND,
+        metrics::Unit::Count,
+        ROUTER_METHOD_NOT_FOUND_HELP
     );
 });
 
@@ -167,4 +177,21 @@ pub(crate) fn parse_errors(service_name: &'static str) -> Counter {
 pub(crate) fn record_parse_error(service_name: &'static str) {
     let counter = parse_errors(service_name);
     counter.increment(1);
+}
+
+/// Get or register a counter for method not found errors.
+pub(crate) fn method_not_found_errors(service_name: &'static str, method: &str) -> Counter {
+    let _ = &DESCRIBE;
+    metrics::counter!(ROUTER_METHOD_NOT_FOUND, "service" => service_name.to_string(), "method" => method.to_string())
+}
+
+/// Record a method not found error.
+pub(crate) fn record_method_not_found(
+    response_sent: bool,
+    service_name: &'static str,
+    method: &str,
+) {
+    let counter = method_not_found_errors(service_name, method);
+    counter.increment(1);
+    record_output(response_sent, service_name, method);
 }
