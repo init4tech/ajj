@@ -31,13 +31,13 @@
 //!
 //!     let req_id = 15u8;
 //!
-//!     tokio::task::spawn_blocking(move || {
+//!     ctx.spawn_with_ctx(|ctx| async move {
 //!       // something expensive goes here
 //!       let result = 100_000_000;
 //!       let _ = ctx.notify(&serde_json::json!({
 //!         "req_id": req_id,
 //!         "result": result,
-//!       }));
+//!       })).await;
 //!     });
 //!     Ok(req_id)
 //!   })

@@ -89,10 +89,17 @@
 //! [`HandlerCtx`]: crate::HandlerCtx
 
 #[cfg(feature = "ipc")]
-mod ipc;
+mod ipc_inner;
 #[cfg(feature = "ipc")]
 #[doc(hidden)]
-pub use ipc::ReadJsonStream;
+// Re-exported for use in tests
+pub use ipc_inner::ReadJsonStream;
+
+/// IPC support via interprocess local sockets.
+#[cfg(feature = "ipc")]
+pub mod ipc {
+    pub use interprocess::local_socket::{self as local_socket, Listener, ListenerOptions, Name};
+}
 
 mod shared;
 pub(crate) use shared::WriteItem;

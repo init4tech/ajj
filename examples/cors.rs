@@ -1,4 +1,4 @@
-//! Basic example of using ajj with CORS.
+//! Basic example of using ajj with CORS via axum.
 //!
 //! This example demonstrates how to set up a simple HTTP server using `axum`
 //! and `tower_http` for CORS support.
@@ -16,6 +16,32 @@ use axum::http::{HeaderValue, Method};
 use eyre::{ensure, Context};
 use std::{future::IntoFuture, net::SocketAddr};
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
+
+#[tokio::main]
+async fn main() -> eyre::Result<()> {
+    let cors = std::env::args().nth(1).unwrap_or("*".to_string());
+
+    let router = make_router()
+        // Convert to an axum router
+        .into_axum("/")
+        // And then layer on your CORS settings
+        .layer(make_cors(&cors)?);
+
+    // Now we can serve the router on a TCP listener
+    let addr = SocketAddr::from(([127, 0, 0, 1], 0));
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+
+    println!("Listening on {}", listener.local_addr()?);
+    println!("CORS allowed for: {}", cors);
+    if cors == "*" {
+        println!("(specify cors domains as a comma-separated list to restrict origins)");
+    }
+    println!("use Ctrl-C to stop");
+    axum::serve(listener, router)
+        .into_future()
+        .await
+        .map_err(Into::into)
+}
 
 fn get_allowed(cors: &str) -> eyre::Result<AllowOrigin> {
     // Wildcard `*` means any origin is allowed.
@@ -53,12 +79,10 @@ fn make_cors(cors: &str) -> eyre::Result<CorsLayer> {
         .allow_headers(Any))
 }
 
-#[tokio::main]
-async fn main() -> eyre::Result<()> {
-    let cors = std::env::args().nth(1).unwrap_or("*".to_string());
-
+// Setting up an AJJ router is easy and fun!
+fn make_router() -> ajj::Router<()> {
     // Setting up an AJJ router is easy and fun!
-    let router = ajj::Router::<()>::new()
+    ajj::Router::<()>::new()
         .route("helloWorld", || async {
             tracing::info!("serving hello world");
             Ok::<_, ()>("Hello, world!")
@@ -67,15 +91,4 @@ async fn main() -> eyre::Result<()> {
             tracing::info!("serving addNumbers");
             Ok::<_, ()>(a + b)
         })
-        // Convert to an axum router
-        .into_axum("/")
-        // And then layer on your CORS settings
-        .layer(make_cors(&cors)?);
-
-    // Now we can serve the router on a TCP listener
-    let addr = SocketAddr::from(([127, 0, 0, 1], 0));
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-
-    axum::serve(listener, router).into_future().await?;
-    Ok(())
 }

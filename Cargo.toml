@@ -81,3 +81,8 @@ inherits = "dev"
 strip = true
 debug = false
 incremental = false
+
+
+[[example]]
+name = "ipc"
+required-features = ["ipc"]
