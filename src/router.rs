@@ -111,6 +111,19 @@ where
         self.inner.service_name()
     }
 
+    /// Set the OpenTelemetry service name for this router, overriding any
+    /// existing name.
+    ///
+    /// ## Note
+    ///
+    /// Routers wrap an `Arc`. If multiple references to the router exist,
+    /// this method will clone the inner state before setting the name.
+    pub fn set_name(self, service_name: &'static str) -> Self {
+        tap_inner!(self, mut this => {
+            this.service_name = Some(service_name);
+        })
+    }
+
     /// If this router is the only reference to its inner state, return the
     /// inner state. Otherwise, clone the inner state and return the clone.
     fn into_inner(self) -> RouterInner<S> {
