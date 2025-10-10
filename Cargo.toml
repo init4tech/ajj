@@ -73,16 +73,20 @@ inherits = "release"
 debug = 2
 strip = false
 
-[profile.bench]
-inherits = "profiling"
-
 [profile.ci-rust]
 inherits = "dev"
 strip = true
 debug = false
 incremental = false
 
-
 [[example]]
 name = "ipc"
 required-features = ["ipc"]
+
+[[example]]
+name = "axum"
+required-features = ["axum", "pubsub"]
+
+[[example]]
+name = "cors"
+required-features = ["axum"]

@@ -14,7 +14,7 @@
 
 use axum::http::{HeaderValue, Method};
 use eyre::{ensure, Context};
-use std::{future::IntoFuture, net::SocketAddr};
+use std::net::SocketAddr;
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
 #[tokio::main]
@@ -37,10 +37,7 @@ async fn main() -> eyre::Result<()> {
         println!("(specify cors domains as a comma-separated list to restrict origins)");
     }
     println!("use Ctrl-C to stop");
-    axum::serve(listener, router)
-        .into_future()
-        .await
-        .map_err(Into::into)
+    axum::serve(listener, router).await.map_err(Into::into)
 }
 
 fn get_allowed(cors: &str) -> eyre::Result<AllowOrigin> {

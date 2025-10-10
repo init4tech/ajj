@@ -1,47 +1,26 @@
-//! Basic example of running a JSON-RPC server over IPC using ajj
-//!
-//! This example demonstrates how to set up a simple IPC server using `ajj`, and
-//! defines a few basic RPC methods.
-//!
-//! The `make_router` function sets up a router with three routes:
-//! - `helloWorld`: Returns a greeting string.
-//! - `addNumbers`: Takes two numbers as parameters and returns their sum.
-//! - `notify`: Sends a notification after a short delay, demonstrating the use
-//!   of notifications in the RPC context.
-
-use ajj::{
-    pubsub::{
-        ipc::{to_name, ListenerOptions},
-        Connect,
-    },
-    HandlerCtx, Router,
-};
-use tempfile::NamedTempFile;
+use ajj::HandlerCtx;
+use std::net::SocketAddr;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     let router = make_router();
 
-    // Create a temporary file for the IPC socket.
-    let tempfile = NamedTempFile::new()?;
-    let name = to_name(tempfile.path().as_os_str()).expect("invalid name");
+    // Serve via `POST` on `/` and Websockets on `/ws`
+    let axum = router.clone().into_axum_with_ws("/", "/ws");
 
-    println!("Serving IPC on socket: {:?}", tempfile.path());
+    // Now we can serve the router on a TCP listener
+    let addr = SocketAddr::from(([127, 0, 0, 1], 0));
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+
+    println!("Listening for POST on {}/", listener.local_addr()?);
+    println!("Listening for WS on {}/ws", listener.local_addr()?);
+
     println!("use Ctrl-C to stop");
-
-    // The guard keeps the server running until dropped.
-    let guard = ListenerOptions::new().name(name).serve(router).await?;
-
-    // Shut down on Ctrl-C
-    tokio::signal::ctrl_c().await?;
-    drop(guard);
-
-    Ok(())
+    axum::serve(listener, axum).await.map_err(Into::into)
 }
 
-// Setting up an AJJ router is easy and fun!
-fn make_router() -> Router<()> {
-    Router::<()>::new()
+fn make_router() -> ajj::Router<()> {
+    ajj::Router::<()>::new()
         .route("helloWorld", || async {
             tracing::info!("serving hello world");
             Ok::<_, ()>("Hello, world!")
