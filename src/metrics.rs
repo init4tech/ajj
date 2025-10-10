@@ -78,7 +78,7 @@ static DESCRIBE: LazyLock<()> = LazyLock::new(|| {
 });
 
 /// Get or register a counter for calls to a specific service and method.
-pub(crate) fn calls(service_name: &'static str, method: &str) -> Counter {
+fn calls(service_name: &'static str, method: &str) -> Counter {
     let _ = &DESCRIBE;
     counter!(
         ROUTER_CALLS,
@@ -95,7 +95,7 @@ pub(crate) fn record_call(service_name: &'static str, method: &str) {
 }
 
 /// Get or register a counter for errors from a specific service and method.
-pub(crate) fn errors(service_name: &'static str, method: &str) -> Counter {
+fn errors(service_name: &'static str, method: &str) -> Counter {
     let _ = &DESCRIBE;
     counter!(
         ROUTER_ERRORS,
@@ -105,13 +105,13 @@ pub(crate) fn errors(service_name: &'static str, method: &str) -> Counter {
 }
 
 /// Record an error from a specific service and method.
-pub(crate) fn record_execution_error(service_name: &'static str, method: &str) {
+fn record_execution_error(service_name: &'static str, method: &str) {
     let counter = errors(service_name, method);
     counter.increment(1);
 }
 
 /// Get or register a counter for successes from a specific service and method.
-pub(crate) fn successes(service_name: &'static str, method: &str) -> Counter {
+fn successes(service_name: &'static str, method: &str) -> Counter {
     let _ = &DESCRIBE;
     counter!(
         ROUTER_SUCCESSES,
@@ -121,7 +121,7 @@ pub(crate) fn successes(service_name: &'static str, method: &str) -> Counter {
 }
 
 /// Record a success from a specific service and method.
-pub(crate) fn record_execution_success(service_name: &'static str, method: &str) {
+fn record_execution_success(service_name: &'static str, method: &str) {
     let counter = successes(service_name, method);
     counter.increment(1);
 }
@@ -137,7 +137,7 @@ pub(crate) fn record_execution(success: bool, service_name: &'static str, method
 }
 
 /// Get or register a counter for responses from a specific service and method.
-pub(crate) fn responses(service_name: &'static str, method: &str) -> Counter {
+fn responses(service_name: &'static str, method: &str) -> Counter {
     let _ = &DESCRIBE;
     counter!(
         ROUTER_RESPONSES,
@@ -147,13 +147,13 @@ pub(crate) fn responses(service_name: &'static str, method: &str) -> Counter {
 }
 
 /// Record a response from a specific service and method.
-pub(crate) fn record_response(service_name: &'static str, method: &str) {
+fn record_response(service_name: &'static str, method: &str) {
     let counter = responses(service_name, method);
     counter.increment(1);
 }
 
 /// Get or register a counter for omitted notification responses from a specific service and method.
-pub(crate) fn response_omitted(service_name: &'static str, method: &str) -> Counter {
+fn response_omitted(service_name: &'static str, method: &str) -> Counter {
     let _ = &DESCRIBE;
     counter!(
         ROUTER_NOTIFICATION_RESPONSE_OMITTED,
@@ -163,7 +163,7 @@ pub(crate) fn response_omitted(service_name: &'static str, method: &str) -> Coun
 }
 
 /// Record an omitted notification response from a specific service and method.
-pub(crate) fn record_response_omitted(service_name: &'static str, method: &str) {
+fn record_response_omitted(service_name: &'static str, method: &str) {
     let counter = response_omitted(service_name, method);
     counter.increment(1);
 }
@@ -179,8 +179,8 @@ pub(crate) fn record_output(response_sent: bool, service_name: &'static str, met
     decrement_active_calls(service_name, method);
 }
 
-// Get or register a counter for parse errors.
-pub(crate) fn parse_errors(service_name: &'static str) -> Counter {
+/// Get or register a counter for parse errors.
+fn parse_errors(service_name: &'static str) -> Counter {
     let _ = &DESCRIBE;
     counter!(ROUTER_PARSE_ERRORS, "service" => service_name.to_string())
 }
@@ -192,7 +192,7 @@ pub(crate) fn record_parse_error(service_name: &'static str) {
 }
 
 /// Get or register a counter for method not found errors.
-pub(crate) fn method_not_found_errors(service_name: &'static str, method: &str) -> Counter {
+fn method_not_found_errors(service_name: &'static str, method: &str) -> Counter {
     let _ = &DESCRIBE;
     counter!(ROUTER_METHOD_NOT_FOUND, "service" => service_name.to_string(), "method" => method.to_string())
 }
@@ -209,27 +209,27 @@ pub(crate) fn record_method_not_found(
 }
 
 /// Get or register a gauge for active calls to a specific service.
-pub(crate) fn active_calls(service_name: &'static str, method: &str) -> Gauge {
+fn active_calls(service_name: &'static str, method: &str) -> Gauge {
     let _ = &DESCRIBE;
     gauge!(ACTIVE_CALLS, "service" => service_name.to_string(), "method" => method.to_string())
 }
 
 /// Increment the active calls gauge for a specific service.
-pub(crate) fn increment_active_calls(service_name: &'static str, method: &str) {
+fn increment_active_calls(service_name: &'static str, method: &str) {
     let _ = &DESCRIBE;
     let gauge = active_calls(service_name, method);
     gauge.increment(1);
 }
 
 /// Decrement the active calls gauge for a specific service.
-pub(crate) fn decrement_active_calls(service_name: &'static str, method: &str) {
+fn decrement_active_calls(service_name: &'static str, method: &str) {
     let _ = &DESCRIBE;
     let gauge = active_calls(service_name, method);
     gauge.decrement(1);
 }
 
 /// Get or register a counter for completed calls to a specific service.
-pub(crate) fn completed_calls(service_name: &'static str, method: &str) -> Counter {
+fn completed_calls(service_name: &'static str, method: &str) -> Counter {
     let _ = &DESCRIBE;
     counter!(
         COMPLETED_CALLS,
@@ -239,7 +239,7 @@ pub(crate) fn completed_calls(service_name: &'static str, method: &str) -> Count
 }
 
 /// Record a completed call to a specific service and method.
-pub(crate) fn record_completed_call(service_name: &'static str, method: &str) {
+fn record_completed_call(service_name: &'static str, method: &str) {
     let _ = &DESCRIBE;
     let counter = completed_calls(service_name, method);
     counter.increment(1);
