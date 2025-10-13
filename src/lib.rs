@@ -31,13 +31,13 @@
 //!
 //!     let req_id = 15u8;
 //!
-//!     tokio::task::spawn_blocking(move || {
+//!     ctx.spawn_with_ctx(|ctx| async move {
 //!       // something expensive goes here
 //!       let result = 100_000_000;
 //!       let _ = ctx.notify(&serde_json::json!({
 //!         "req_id": req_id,
 //!         "result": result,
-//!       }));
+//!       })).await;
 //!     });
 //!     Ok(req_id)
 //!   })
@@ -148,7 +148,7 @@
 )]
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 #![deny(unused_must_use, rust_2018_idioms)]
-#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[macro_use]
 pub(crate) mod macros;

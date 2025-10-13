@@ -89,10 +89,29 @@
 //! [`HandlerCtx`]: crate::HandlerCtx
 
 #[cfg(feature = "ipc")]
-mod ipc;
+mod ipc_inner;
 #[cfg(feature = "ipc")]
 #[doc(hidden)]
-pub use ipc::ReadJsonStream;
+// Re-exported for use in tests
+pub use ipc_inner::ReadJsonStream;
+
+/// IPC support via interprocess local sockets.
+#[cfg(feature = "ipc")]
+pub mod ipc {
+    use std::ffi::OsStr;
+
+    pub use interprocess::local_socket::{self as local_socket, Listener, ListenerOptions, Name};
+
+    /// Convenience function to convert an [`OsStr`] to a local socket [`Name`]
+    /// in a platform-safe way.
+    pub fn to_name(path: &OsStr) -> std::io::Result<local_socket::Name<'_>> {
+        if cfg!(windows) && !path.as_encoded_bytes().starts_with(br"\\.\pipe\") {
+            local_socket::ToNsName::to_ns_name::<local_socket::GenericNamespaced>(path)
+        } else {
+            local_socket::ToFsName::to_fs_name::<local_socket::GenericFilePath>(path)
+        }
+    }
+}
 
 mod shared;
 pub(crate) use shared::WriteItem;
