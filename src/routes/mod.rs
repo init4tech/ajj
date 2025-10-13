@@ -1,5 +1,5 @@
 mod ctx;
-pub use ctx::{HandlerArgs, HandlerCtx, NotifyError};
+pub use ctx::{HandlerArgs, HandlerCtx, NotifyError, TracingInfo};
 
 mod erased;
 pub(crate) use erased::{BoxedIntoRoute, ErasedIntoRoute, MakeErasedHandler};
@@ -14,6 +14,7 @@ pub use handler::{Handler, Params, State};
 mod method;
 pub(crate) use method::Method;
 
+use crate::types::Response;
 use serde_json::value::RawValue;
 use std::{
     convert::Infallible,
@@ -21,8 +22,6 @@ use std::{
 };
 use tower::{util::BoxCloneSyncService, Service, ServiceExt};
 use tracing::{debug_span, enabled, Level};
-
-use crate::types::Response;
 
 /// A JSON-RPC handler for a specific method.
 ///
@@ -52,10 +51,13 @@ impl Route {
     /// Create a default fallback route that returns a method not found error.
     pub(crate) fn default_fallback() -> Self {
         Self::new(tower::service_fn(|args: HandlerArgs| async {
-            let HandlerArgs { req, .. } = args;
-            let id = req.id_owned();
-            drop(req);
-
+            let id = args.id_owned();
+            crate::metrics::record_method_not_found(
+                id.is_some(),
+                args.service_name(),
+                args.method(),
+            );
+            drop(args); // no longer needed
             Ok(Response::maybe_method_not_found(id.as_deref()))
         }))
     }
@@ -102,7 +104,7 @@ impl Service<HandlerArgs> for Route {
             params = tracing::field::Empty,
         );
         if enabled!(Level::TRACE) {
-            span.record("params", args.req.params());
+            span.record("params", args.req().params());
         }
         self.oneshot_inner(args)
     }

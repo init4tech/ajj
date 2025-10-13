@@ -3,7 +3,7 @@ use bytes::Bytes;
 use serde::Deserialize;
 use serde_json::value::RawValue;
 use std::ops::Range;
-use tracing::{debug, enabled, instrument, Level};
+use tracing::{debug, enabled, instrument, span::Span, Level};
 
 /// UTF-8, partially deserialized JSON-RPC request batch.
 #[derive(Default)]
@@ -56,8 +56,12 @@ impl TryFrom<Bytes> for InboundData {
     #[instrument(level = "debug", skip(bytes), fields(buf_len = bytes.len(), bytes = tracing::field::Empty))]
     fn try_from(bytes: Bytes) -> Result<Self, Self::Error> {
         if enabled!(Level::TRACE) {
-            tracing::span::Span::current().record("bytes", format!("0x{:x}", bytes));
+            Span::current().record("bytes", format!("0x{:x}", bytes));
         }
+
+        // This event exists only so that people who use default console
+        // logging setups still see the span details. Without this event, the
+        // span would not show up in logs.
         debug!("Parsing inbound data");
 
         // We set up the deserializer to read from the byte buffer.

@@ -1,158 +1,60 @@
 use crate::RpcSend;
-use serde::{ser::SerializeMap, Serialize, Serializer};
+use serde::Serialize;
 use serde_json::value::{to_raw_value, RawValue};
 use std::borrow::Cow;
 use std::fmt;
 
 const INTERNAL_ERROR: Cow<'_, str> = Cow::Borrowed("Internal error");
 
-/// Response struct.
-#[derive(Debug, Clone)]
-pub(crate) struct Response<'a, 'b, T, E> {
-    pub(crate) id: &'b RawValue,
-    pub(crate) payload: &'a ResponsePayload<T, E>,
-}
-
-impl Response<'_, '_, (), ()> {
-    /// Parse error response, used when the request is not valid JSON.
-    #[allow(dead_code)] // used in features
-    pub(crate) fn parse_error() -> Box<RawValue> {
-        Response::<(), ()> {
-            id: RawValue::NULL,
-            payload: &ResponsePayload::parse_error(),
-        }
-        .to_json()
-    }
-
-    /// Invalid params response, used when the params field does not
-    /// deserialize into the expected type.
-    pub(crate) fn invalid_params(id: &RawValue) -> Box<RawValue> {
-        Response::<(), ()> {
-            id,
-            payload: &ResponsePayload::invalid_params(),
-        }
-        .to_json()
-    }
-
-    /// Invalid params response, used when the params field does not
-    /// deserialize into the expected type. This function exists to simplify
-    /// notification responses, which should be omitted.
-    pub(crate) fn maybe_invalid_params(id: Option<&RawValue>) -> Option<Box<RawValue>> {
-        id.map(Self::invalid_params)
-    }
-
-    /// Method not found response, used in default fallback handler.
-    pub(crate) fn method_not_found(id: &RawValue) -> Box<RawValue> {
-        Response::<(), ()> {
-            id,
-            payload: &ResponsePayload::method_not_found(),
-        }
-        .to_json()
-    }
-
-    /// Method not found response, used in default fallback handler. This
-    /// function exists to simplify notification responses, which should be
-    /// omitted.
-    pub(crate) fn maybe_method_not_found(id: Option<&RawValue>) -> Option<Box<RawValue>> {
-        id.map(Self::method_not_found)
-    }
-
-    /// Response failed to serialize
-    pub(crate) fn serialization_failure(id: &RawValue) -> Box<RawValue> {
-        RawValue::from_string(format!(
-            r#"{{"jsonrpc":"2.0","id":{},"error":{{"code":-32700,"message":"response serialization error"}}}}"#,
-            id.get()
-        ))
-        .expect("valid json")
-    }
-}
-
-impl<'a, 'b, T, E> Response<'a, 'b, T, E>
-where
-    T: Serialize,
-    E: Serialize,
-{
-    pub(crate) fn maybe(
-        id: Option<&'b RawValue>,
-        payload: &'a ResponsePayload<T, E>,
-    ) -> Option<Box<RawValue>> {
-        id.map(|id| Self { id, payload }.to_json())
-    }
-
-    pub(crate) fn to_json(&self) -> Box<RawValue> {
-        serde_json::value::to_raw_value(self).unwrap_or_else(|err| {
-            tracing::debug!(%err, id = ?self.id, "failed to serialize response");
-            Response::serialization_failure(self.id)
-        })
-    }
-}
-
-impl<T, E> Serialize for Response<'_, '_, T, E>
-where
-    T: Serialize,
-    E: Serialize,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut map = serializer.serialize_map(Some(3))?;
-        map.serialize_entry("jsonrpc", "2.0")?;
-        map.serialize_entry("id", &self.id)?;
-        match &self.payload {
-            ResponsePayload::Success(result) => {
-                map.serialize_entry("result", result)?;
-            }
-            ResponsePayload::Failure(error) => {
-                map.serialize_entry("error", error)?;
-            }
-        }
-        map.end()
-    }
-}
-
 /// A JSON-RPC 2.0 response payload.
 ///
-/// This enum covers both the success and error cases of a JSON-RPC 2.0
-/// response. It is used to represent the `result` and `error` fields of a
-/// response object.
+/// This is a thin wrapper around a [`Result`] type containing either
+/// the successful payload or an error payload.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ResponsePayload<Payload, ErrData> {
-    /// A successful response payload.
-    Success(Payload),
-    /// An error response payload.
-    Failure(ErrorPayload<ErrData>),
+#[repr(transparent)]
+pub struct ResponsePayload<Payload, ErrData>(pub Result<Payload, ErrorPayload<ErrData>>);
+
+impl<T, E> From<Result<T, E>> for ResponsePayload<T, E>
+where
+    E: RpcSend,
+{
+    fn from(res: Result<T, E>) -> Self {
+        match res {
+            Ok(payload) => Self(Ok(payload)),
+            Err(err) => Self(Err(ErrorPayload::internal_error_with_obj(err))),
+        }
+    }
 }
 
 impl<Payload, ErrData> ResponsePayload<Payload, ErrData> {
     /// Create a new error payload for a parse error.
     pub const fn parse_error() -> Self {
-        Self::Failure(ErrorPayload::parse_error())
+        Self(Err(ErrorPayload::parse_error()))
     }
 
     /// Create a new error payload for an invalid request.
     pub const fn invalid_request() -> Self {
-        Self::Failure(ErrorPayload::invalid_request())
+        Self(Err(ErrorPayload::invalid_request()))
     }
 
     /// Create a new error payload for a method not found error.
     pub const fn method_not_found() -> Self {
-        Self::Failure(ErrorPayload::method_not_found())
+        Self(Err(ErrorPayload::method_not_found()))
     }
 
     /// Create a new error payload for an invalid params error.
     pub const fn invalid_params() -> Self {
-        Self::Failure(ErrorPayload::invalid_params())
+        Self(Err(ErrorPayload::invalid_params()))
     }
 
     /// Create a new error payload for an internal error.
     pub const fn internal_error() -> Self {
-        Self::Failure(ErrorPayload::internal_error())
+        Self(Err(ErrorPayload::internal_error()))
     }
 
     /// Create a new error payload for an internal error with a custom message.
     pub const fn internal_error_message(message: Cow<'static, str>) -> Self {
-        Self::Failure(ErrorPayload::internal_error_message(message))
+        Self(Err(ErrorPayload::internal_error_message(message)))
     }
 
     /// Create a new error payload for an internal error with a custom message
@@ -161,7 +63,7 @@ impl<Payload, ErrData> ResponsePayload<Payload, ErrData> {
     where
         ErrData: RpcSend,
     {
-        Self::Failure(ErrorPayload::internal_error_with_obj(data))
+        Self(Err(ErrorPayload::internal_error_with_obj(data)))
     }
 
     /// Create a new error payload for an internal error with a custom message
@@ -173,15 +75,15 @@ impl<Payload, ErrData> ResponsePayload<Payload, ErrData> {
     where
         ErrData: RpcSend,
     {
-        Self::Failure(ErrorPayload::internal_error_with_message_and_obj(
+        Self(Err(ErrorPayload::internal_error_with_message_and_obj(
             message, data,
-        ))
+        )))
     }
 
     /// Fallible conversion to the successful payload.
     pub const fn as_success(&self) -> Option<&Payload> {
         match self {
-            Self::Success(payload) => Some(payload),
+            Self(Ok(payload)) => Some(payload),
             _ => None,
         }
     }
@@ -189,19 +91,19 @@ impl<Payload, ErrData> ResponsePayload<Payload, ErrData> {
     /// Fallible conversion to the error object.
     pub const fn as_error(&self) -> Option<&ErrorPayload<ErrData>> {
         match self {
-            Self::Failure(payload) => Some(payload),
+            Self(Err(payload)) => Some(payload),
             _ => None,
         }
     }
 
     /// Returns `true` if the response payload is a success.
     pub const fn is_success(&self) -> bool {
-        matches!(self, Self::Success(_))
+        matches!(self, Self(Ok(_)))
     }
 
     /// Returns `true` if the response payload is an error.
     pub const fn is_error(&self) -> bool {
-        matches!(self, Self::Failure(_))
+        matches!(self, Self(Err(_)))
     }
 
     /// Convert a result into a response payload, by converting the error into
@@ -211,8 +113,8 @@ impl<Payload, ErrData> ResponsePayload<Payload, ErrData> {
         T: Into<Cow<'static, str>>,
     {
         match res {
-            Ok(payload) => Self::Success(payload),
-            Err(err) => Self::Failure(ErrorPayload::internal_error_message(err.into())),
+            Ok(payload) => Self(Ok(payload)),
+            Err(err) => Self(Err(ErrorPayload::internal_error_message(err.into()))),
         }
     }
 }
@@ -403,51 +305,3 @@ impl<ErrData: fmt::Display> fmt::Display for ErrorPayload<ErrData> {
         )
     }
 }
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use crate::test_utils::assert_rv_eq;
-
-    #[test]
-    fn ser_failure() {
-        let id = RawValue::from_string("1".to_string()).unwrap();
-        let res = Response::<(), ()>::serialization_failure(&id);
-        assert_rv_eq(
-            &res,
-            r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32700,"message":"response serialization error"}}"#,
-        );
-    }
-}
-
-// Some code is this file is reproduced under the terms of the MIT license. It
-// originates from the `alloy` crate. The original source code can be found at
-// the following URL, and the original license is included below.
-//
-// https://github.com/alloy-rs/alloy
-//
-// The MIT License (MIT)
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.

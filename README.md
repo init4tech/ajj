@@ -71,6 +71,23 @@ implementations.
 
 See the [crate documentation on docs.rs] for more detailed examples.
 
+## Specification Complinace
+
+`ajj` aims to be fully compliant with the [JSON-RPC 2.0] specification. If any
+issues are found, please [open an issue]!
+
+`ajj` produces [`tracing`] spans and events that meet the [OpenTelemetry
+semantic conventions] for JSON-RPC servers with the following exceptions:
+
+- The `server.address` attribute is NOT set, as the server address is not always
+  known to the ajj system.
+- `rpc.message` events are included in AJJ system spans for the batch request,
+  which technically does not comply with semantic conventions. The semantic
+  conventions do not specify how to handle batch requests, and assume that each
+  message corresponds to a separate request. In AJJ, batch requests are a single
+  message, and result in a single `rpc.message` event at receipt and at
+  response.
+
 ## Note on code provenance
 
 Some code in this project has been reproduced or adapted from other projects.
@@ -94,3 +111,6 @@ reproduced from the following projects, and we are grateful for their work:
 [`interprocess::local_socket::ListenerOptions`]: https://docs.rs/interprocess/latest/interprocess/local_socket/struct.ListenerOptions.html
 [std::net::SocketAddr]: https://doc.rust-lang.org/std/net/enum.SocketAddr.html
 [alloy]: https://docs.rs/alloy/latest/alloy/
+[open an issue]: https://github.com/init4tech/ajj/issues/new
+[OpenTelemetry semantic conventions]: https://opentelemetry.io/docs/specs/semconv/rpc/json-rpc/
+[`tracing`]: https://docs.rs/tracing/latest/tracing/

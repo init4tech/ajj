@@ -1,15 +1,18 @@
 use crate::{
     pubsub::{In, JsonSink, Listener, Out},
     types::InboundData,
-    HandlerCtx, TaskSet,
+    HandlerCtx, TaskSet, TracingInfo,
 };
 use core::fmt;
 use serde_json::value::RawValue;
-use std::sync::{atomic::AtomicU64, Arc};
+use std::sync::{
+    atomic::{AtomicU32, AtomicU64, Ordering},
+    Arc,
+};
 use tokio::{pin, runtime::Handle, select, sync::mpsc, task::JoinHandle};
 use tokio_stream::StreamExt;
 use tokio_util::sync::WaitForCancellationFutureOwned;
-use tracing::{debug, debug_span, error, trace, Instrument};
+use tracing::{debug, error, trace, Instrument};
 
 /// Default notification buffer size per task.
 pub const DEFAULT_NOTIFICATION_BUFFER_PER_CLIENT: usize = 16;
@@ -67,6 +70,10 @@ pub(crate) struct ConnectionManager {
     pub(crate) router: crate::Router<()>,
 
     pub(crate) notification_buffer_per_task: usize,
+
+    // OTEL message counters
+    pub(crate) tx_msg_id: Arc<AtomicU32>,
+    pub(crate) rx_msg_id: Arc<AtomicU32>,
 }
 
 impl ConnectionManager {
@@ -77,6 +84,8 @@ impl ConnectionManager {
             next_id: AtomicU64::new(0).into(),
             router,
             notification_buffer_per_task: DEFAULT_NOTIFICATION_BUFFER_PER_CLIENT,
+            tx_msg_id: Arc::new(AtomicU32::new(1)),
+            rx_msg_id: Arc::new(AtomicU32::new(1)),
         }
     }
 
@@ -105,8 +114,7 @@ impl ConnectionManager {
 
     /// Increment the connection ID counter and return an unused ID.
     fn next_id(&self) -> ConnectionId {
-        self.next_id
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        self.next_id.fetch_add(1, Ordering::Relaxed)
     }
 
     /// Get a clone of the router.
@@ -131,13 +139,15 @@ impl ConnectionManager {
             write_task: tx,
             requests,
             tasks: tasks.clone(),
+            rx_msg_id: self.rx_msg_id.clone(),
         };
 
         let wt = WriteTask {
             tasks,
             conn_id,
-            json: rx,
+            items: rx,
             connection,
+            tx_msg_id: self.tx_msg_id.clone(),
         };
 
         (rt, wt)
@@ -168,11 +178,14 @@ struct RouteTask<T: crate::pubsub::Listener> {
     /// Connection ID for the connection serviced by this task.
     pub(crate) conn_id: ConnectionId,
     /// Sender to the write task.
-    pub(crate) write_task: mpsc::Sender<Box<RawValue>>,
+    pub(crate) write_task: mpsc::Sender<WriteItem>,
     /// Stream of requests.
     pub(crate) requests: In<T>,
     /// The task set for this connection
     pub(crate) tasks: TaskSet,
+
+    /// Counter for OTEL messages received.
+    pub(crate) rx_msg_id: Arc<AtomicU32>,
 }
 
 impl<T: crate::pubsub::Listener> fmt::Debug for RouteTask<T> {
@@ -199,6 +212,7 @@ where
             mut requests,
             write_task,
             tasks,
+            rx_msg_id,
             ..
         } = self;
 
@@ -224,6 +238,8 @@ where
                         break;
                     };
 
+                    let item_bytes = item.len();
+
                     // If the inbound data is not currently parsable, we
                     // send an empty one it to the router, as the router
                     // enforces the specification.
@@ -234,15 +250,32 @@ where
                     // if the client stops accepting responses, we do not keep
                     // handling inbound requests.
                     let Ok(permit) = write_task.clone().reserve_owned().await else {
-                        tracing::error!("write task dropped while waiting for permit");
+                        error!("write task dropped while waiting for permit");
                         break;
                     };
+
+                     // This span is populated with as much detail as
+                     // possible, and then given to the Handler ctx. It
+                     // will be populated with request-specific details
+                     // (e.g. method) during ctx instantiation.
+                    let tracing = TracingInfo::new(router.service_name());
 
                     let ctx =
                     HandlerCtx::new(
                         Some(write_task.clone()),
                         children.clone(),
+                        tracing,
                     );
+                    ctx.init_request_span(&router, None);
+
+                    let span = ctx.span().clone();
+                    span.in_scope(|| {
+                        message_event!(
+                            @received,
+                            counter: &rx_msg_id,
+                            bytes: item_bytes,
+                        );
+                    });
 
                     // Run the future in a new task.
                     let fut = router.handle_request_batch(ctx, reqs);
@@ -252,9 +285,9 @@ where
                             // Send the response to the write task.
                             // we don't care if the receiver has gone away,
                             // as the task is done regardless.
-                            if let Some(rv) = fut.await {
+                            if let Some(json) = fut.await {
                                 let _ = permit.send(
-                                    rv
+                                    WriteItem { span, json }
                                 );
                             }
                         }
@@ -275,6 +308,13 @@ where
     }
 }
 
+/// An item to be written to an outbound JSON pubsub stream.
+#[derive(Debug, Clone)]
+pub(crate) struct WriteItem {
+    pub(crate) span: tracing::Span,
+    pub(crate) json: Box<RawValue>,
+}
+
 /// The Write Task is responsible for writing JSON to the outbound connection.
 struct WriteTask<T: Listener> {
     /// Task set
@@ -287,10 +327,13 @@ struct WriteTask<T: Listener> {
     ///
     /// Dropping this channel will cause the associated [`RouteTask`] to
     /// shutdown.
-    pub(crate) json: mpsc::Receiver<Box<RawValue>>,
+    pub(crate) items: mpsc::Receiver<WriteItem>,
 
     /// Outbound connections.
     pub(crate) connection: Out<T>,
+
+    /// Counter for OTEL messages sent.
+    pub(crate) tx_msg_id: Arc<AtomicU32>,
 }
 
 impl<T: Listener> WriteTask<T> {
@@ -305,8 +348,9 @@ impl<T: Listener> WriteTask<T> {
     pub(crate) async fn task_future(self) {
         let WriteTask {
             tasks,
-            mut json,
+            mut items,
             mut connection,
+            tx_msg_id,
             ..
         } = self;
 
@@ -318,12 +362,19 @@ impl<T: Listener> WriteTask<T> {
                     debug!("Shutdown signal received");
                     break;
                 }
-                json = json.recv() => {
-                    let Some(json) = json else {
+                item = items.recv() => {
+                    let Some(WriteItem { span, json }) = item else {
                         tracing::error!("Json stream has closed");
                         break;
                     };
-                    let span = debug_span!("WriteTask", conn_id = self.conn_id);
+                    span.in_scope(|| {
+                        message_event!(
+                            @sent,
+                            counter: &tx_msg_id,
+                            bytes: json.get().len(),
+                        );
+                    });
+
                     if let Err(err) = connection.send_json(json).instrument(span).await {
                         debug!(%err, conn_id = self.conn_id, "Failed to send json");
                         break;

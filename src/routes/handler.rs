@@ -3,16 +3,7 @@ use crate::{
 };
 use serde_json::value::RawValue;
 use std::{convert::Infallible, future::Future, marker::PhantomData, pin::Pin, task};
-use tracing::{debug_span, enabled, trace, Instrument, Level};
-
-macro_rules! convert_result {
-    ($res:expr) => {{
-        match $res {
-            Ok(val) => ResponsePayload::Success(val),
-            Err(err) => ResponsePayload::internal_error_with_obj(err),
-        }
-    }};
-}
+use tracing::{trace, Instrument};
 
 /// Hint type for differentiating certain handler impls. See the [`Handler`]
 /// trait "Handler argument type inference" section for more information.
@@ -25,6 +16,12 @@ pub struct State<S>(pub S);
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct Params<T>(pub T);
+
+impl<T> From<T> for Params<T> {
+    fn from(value: T) -> Self {
+        Self(value)
+    }
+}
 
 /// Marker type used for differentiating certain handler impls.
 #[allow(missing_debug_implementations, unreachable_pub)]
@@ -227,7 +224,7 @@ pub struct PhantomParams<T>(PhantomData<T>);
 /// let cant_infer_err = || async { Ok(2) };
 ///
 /// // cannot infer type of the type parameter `ErrData` declared on the enum `ResponsePayload`
-/// let cant_infer_failure = || async { ResponsePayload::Success(3) };
+/// let cant_infer_failure = || async { ResponsePayload(Ok(3)) };
 ///
 /// // cannot infer type of the type parameter `ErrData` declared on the enum `ResponsePayload`
 /// let cant_infer_success = || async { ResponsePayload::internal_error_with_obj(4) };
@@ -245,7 +242,7 @@ pub struct PhantomParams<T>(PhantomData<T>);
 /// let handler_b = || async { Err::<(), _>(2) };
 ///
 /// // specify the ErrData on your Success
-/// let handler_c = || async { ResponsePayload::Success::<_, ()>(3) };
+/// let handler_c = || async { ResponsePayload::<_, ()>(Ok(3)) };
 ///
 /// // specify the Payload on your Failure
 /// let handler_d = || async { ResponsePayload::<(), _>::internal_error_with_obj(4) };
@@ -412,16 +409,9 @@ where
     fn call(&mut self, args: HandlerArgs) -> Self::Future {
         let this = self.clone();
         Box::pin(async move {
-            let notifications_enabled = args.ctx.notifications_enabled();
-
-            let span = debug_span!(
-                "HandlerService::call",
-                notifications_enabled,
-                params = tracing::field::Empty
-            );
-            if enabled!(Level::TRACE) {
-                span.record("params", args.req.params());
-            }
+            // This span captures standard OpenTelemetry attributes for
+            // JSON-RPC according to OTEL semantic conventions.
+            let span = args.span().clone();
 
             Ok(this
                 .handler
@@ -450,6 +440,7 @@ pub struct OutputResponsePayload {
     _sealed: (),
 }
 
+// Takes nothing, returns ResponsePayload
 impl<F, Fut, Payload, ErrData, S> Handler<(OutputResponsePayload,), S> for F
 where
     F: FnOnce() -> Fut + Clone + Send + Sync + 'static,
@@ -460,16 +451,11 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        let id = args.req.id_owned();
-
-        Box::pin(async move {
-            let payload = self().await;
-
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self())
     }
 }
 
+// Takes Ctx, returns ResponsePayload
 impl<F, Fut, Payload, ErrData, S> Handler<(OutputResponsePayload, HandlerCtx), S> for F
 where
     F: FnOnce(HandlerCtx) -> Fut + Clone + Send + Sync + 'static,
@@ -480,16 +466,11 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        let id = args.req.id_owned();
-        let ctx = args.ctx;
-
-        Box::pin(async move {
-            let payload = self(ctx).await;
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(ctx))
     }
 }
 
+// Takes Params, returns ResponsePayload
 impl<F, Fut, Input, Payload, ErrData, S> Handler<(OutputResponsePayload, PhantomParams<Input>), S>
     for F
 where
@@ -502,19 +483,11 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        let HandlerArgs { req, .. } = args;
-        Box::pin(async move {
-            let id = req.id_owned();
-            let Ok(params) = req.deser_params() else {
-                return Response::maybe_invalid_params(id.as_deref());
-            };
-
-            let payload = self(params).await;
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(params: Input))
     }
 }
 
+// Takes Params<Params>, returns ResponsePayload
 impl<F, Fut, Input, Payload, ErrData, S> Handler<(OutputResponsePayload, Params<Input>), S> for F
 where
     F: FnOnce(Params<Input>) -> Fut + Clone + Send + Sync + 'static,
@@ -526,19 +499,11 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        let HandlerArgs { req, .. } = args;
-        Box::pin(async move {
-            let id = req.id_owned();
-            let Ok(params) = req.deser_params() else {
-                return Response::maybe_invalid_params(id.as_deref());
-            };
-
-            let payload = self(Params(params)).await;
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(params: Input))
     }
 }
 
+// Takes State, returns ResponsePayload
 impl<F, Fut, Payload, ErrData, S> Handler<(OutputResponsePayload, PhantomState<S>), S> for F
 where
     F: FnOnce(S) -> Fut + Clone + Send + Sync + 'static,
@@ -550,14 +515,11 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
-        let id = args.req.id_owned();
-        Box::pin(async move {
-            let payload = self(state).await;
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(state))
     }
 }
 
+// Takes State<State>, returns ResponsePayload
 impl<F, Fut, Payload, ErrData, S> Handler<(OutputResponsePayload, State<S>), S> for F
 where
     F: FnOnce(State<S>) -> Fut + Clone + Send + Sync + 'static,
@@ -569,14 +531,11 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
-        let id = args.req.id_owned();
-        Box::pin(async move {
-            let payload = self(State(state)).await;
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(State(state)))
     }
 }
 
+// Takes Ctx, Params, returns ResponsePayload
 impl<F, Fut, Input, Payload, ErrData, S>
     Handler<(OutputResponsePayload, HandlerCtx, PhantomParams<Input>), S> for F
 where
@@ -589,22 +548,11 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        Box::pin(async move {
-            let HandlerArgs { ctx, req } = args;
-
-            let id = req.id_owned();
-            let Ok(params) = req.deser_params() else {
-                return Response::maybe_invalid_params(id.as_deref());
-            };
-
-            drop(req); // deallocate explicitly. No funny business.
-
-            let payload = self(ctx, params).await;
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(ctx, params: Input))
     }
 }
 
+// Takes Ctx, Params<Params>, returns ResponsePayload
 impl<F, Fut, Input, Payload, ErrData, S>
     Handler<(OutputResponsePayload, HandlerCtx, Params<Input>), S> for F
 where
@@ -617,22 +565,11 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        Box::pin(async move {
-            let HandlerArgs { ctx, req } = args;
-
-            let id = req.id_owned();
-            let Ok(params) = req.deser_params() else {
-                return Response::maybe_invalid_params(id.as_deref());
-            };
-
-            drop(req); // deallocate explicitly. No funny business.
-
-            let payload = self(ctx, Params(params)).await;
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(ctx, params: Input))
     }
 }
 
+// Takes Params, State, returns ResponsePayload
 impl<F, Fut, Input, Payload, ErrData, S> Handler<(OutputResponsePayload, Input, S), S> for F
 where
     F: FnOnce(Input, S) -> Fut + Clone + Send + Sync + 'static,
@@ -645,22 +582,11 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
-        Box::pin(async move {
-            let HandlerArgs { req, .. } = args;
-
-            let id = req.id_owned();
-            let Ok(params) = req.deser_params() else {
-                return Response::maybe_invalid_params(id.as_deref());
-            };
-            drop(req); // deallocate explicitly. No funny business.
-
-            let payload = self(params, state).await;
-
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(params: Input, state))
     }
 }
 
+// Takes Ctx, State, returns ResponsePayload
 impl<F, Fut, Payload, ErrData, S> Handler<(OutputResponsePayload, HandlerCtx, PhantomState<S>), S>
     for F
 where
@@ -673,20 +599,11 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
-        Box::pin(async move {
-            let HandlerArgs { ctx, req } = args;
-
-            let id = req.id_owned();
-
-            drop(req); // deallocate explicitly. No funny business.
-
-            let payload = self(ctx, state).await;
-
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(ctx, state))
     }
 }
 
+// Takes Ctx, State<State>, returns ResponsePayload
 impl<F, Fut, Payload, ErrData, S> Handler<(OutputResponsePayload, HandlerCtx, State<S>), S> for F
 where
     F: FnOnce(HandlerCtx, State<S>) -> Fut + Clone + Send + Sync + 'static,
@@ -698,20 +615,11 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
-        Box::pin(async move {
-            let HandlerArgs { ctx, req } = args;
-
-            let id = req.id_owned();
-
-            drop(req); // deallocate explicitly. No funny business.
-
-            let payload = self(ctx, State(state)).await;
-
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(ctx, State(state)))
     }
 }
 
+// Takes Ctx, Params, State, returns ResponsePayload
 impl<F, Fut, Input, Payload, ErrData, S> Handler<(OutputResponsePayload, HandlerCtx, Input, S), S>
     for F
 where
@@ -725,22 +633,11 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
-        Box::pin(async move {
-            let HandlerArgs { ctx, req } = args;
-
-            let id = req.id_owned();
-            let Ok(params) = req.deser_params() else {
-                return Response::maybe_invalid_params(id.as_deref());
-            };
-
-            drop(req); // deallocate explicitly. No funny business.
-
-            let payload = self(ctx, params, state).await;
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(ctx, params: Input, state))
     }
 }
 
+// Takes nothing, returns Result
 impl<F, Fut, Payload, ErrData, S> Handler<(OutputResult,), S> for F
 where
     F: FnOnce() -> Fut + Clone + Send + Sync + 'static,
@@ -751,12 +648,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        let id = args.req.id_owned();
-        drop(args);
-        Box::pin(async move {
-            let payload = self().await;
-            Response::maybe(id.as_deref(), &convert_result!(payload))
-        })
+        impl_handler_call!(args, self())
     }
 }
 
@@ -770,16 +662,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        let HandlerArgs { ctx, req } = args;
-
-        let id = req.id_owned();
-
-        drop(req);
-
-        Box::pin(async move {
-            let payload = convert_result!(self(ctx).await);
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(ctx))
     }
 }
 
@@ -794,20 +677,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        Box::pin(async move {
-            let HandlerArgs { req, .. } = args;
-
-            let id = req.id_owned();
-            let Ok(params) = req.deser_params() else {
-                return Response::maybe_invalid_params(id.as_deref());
-            };
-
-            drop(req); // deallocate explicitly. No funny business.
-
-            let payload = convert_result!(self(params).await);
-
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(params: Input))
     }
 }
 
@@ -822,20 +692,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        Box::pin(async move {
-            let HandlerArgs { req, .. } = args;
-
-            let id = req.id_owned();
-            let Ok(params) = req.deser_params() else {
-                return Response::maybe_invalid_params(id.as_deref());
-            };
-
-            drop(req); // deallocate explicitly. No funny business.
-
-            let payload = convert_result!(self(Params(params)).await);
-
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(params: Input))
     }
 }
 
@@ -850,11 +707,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
-        let id = args.req.id_owned();
-        Box::pin(async move {
-            let payload = convert_result!(self(state).await);
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(state))
     }
 }
 
@@ -869,11 +722,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
-        let id = args.req.id_owned();
-        Box::pin(async move {
-            let payload = convert_result!(self(State(state)).await);
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(State(state)))
     }
 }
 
@@ -889,20 +738,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        Box::pin(async move {
-            let HandlerArgs { ctx, req } = args;
-
-            let id = req.id_owned();
-            let Ok(params) = req.deser_params() else {
-                return Response::maybe_invalid_params(id.as_deref());
-            };
-
-            drop(req); // deallocate explicitly. No funny business.
-
-            let payload = convert_result!(self(ctx, params).await);
-
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(ctx, params: Input))
     }
 }
 
@@ -917,20 +753,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, _state: S) -> Self::Future {
-        Box::pin(async move {
-            let HandlerArgs { ctx, req } = args;
-
-            let id = req.id_owned();
-            let Ok(params) = req.deser_params() else {
-                return Response::maybe_invalid_params(id.as_deref());
-            };
-
-            drop(req); // deallocate explicitly. No funny business.
-
-            let payload = convert_result!(self(ctx, Params(params)).await);
-
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(ctx, params: Input))
     }
 }
 
@@ -946,20 +769,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
-        Box::pin(async move {
-            let HandlerArgs { req, .. } = args;
-
-            let id = req.id_owned();
-            let Ok(params) = req.deser_params() else {
-                return Response::maybe_invalid_params(id.as_deref());
-            };
-
-            drop(req); // deallocate explicitly. No funny business.
-
-            let payload = convert_result!(self(params, state).await);
-
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(params: Input, state))
     }
 }
 
@@ -974,17 +784,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
-        let HandlerArgs { ctx, req } = args;
-
-        let id = req.id_owned();
-
-        drop(req);
-
-        Box::pin(async move {
-            let payload = convert_result!(self(ctx, state).await);
-
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(ctx, state))
     }
 }
 
@@ -999,17 +799,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
-        let HandlerArgs { ctx, req } = args;
-
-        let id = req.id_owned();
-
-        drop(req);
-
-        Box::pin(async move {
-            let payload = convert_result!(self(ctx, State(state)).await);
-
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(ctx, State(state)))
     }
 }
 
@@ -1025,20 +815,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
     fn call_with_state(self, args: HandlerArgs, state: S) -> Self::Future {
-        Box::pin(async move {
-            let HandlerArgs { ctx, req } = args;
-
-            let id = req.id_owned();
-            let Ok(params) = req.deser_params() else {
-                return Response::maybe_invalid_params(id.as_deref());
-            };
-
-            drop(req); // deallocate explicitly. No funny business.
-
-            let payload = convert_result!(self(ctx, params, state).await);
-
-            Response::maybe(id.as_deref(), &payload)
-        })
+        impl_handler_call!(args, self(ctx, params: Input, state))
     }
 }
 
@@ -1051,7 +828,7 @@ mod test {
     struct NewType;
 
     async fn resp_ok() -> ResponsePayload<(), ()> {
-        ResponsePayload::Success(())
+        ResponsePayload(Ok(()))
     }
 
     async fn ok() -> Result<(), ()> {

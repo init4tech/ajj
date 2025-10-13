@@ -95,6 +95,35 @@ where
         }
     }
 
+    /// Create a new, empty router with the specified OpenTelemetry service
+    /// name.
+    pub fn new_named(service_name: &'static str) -> Self {
+        Self {
+            inner: Arc::new(RouterInner {
+                service_name: Some(service_name),
+                ..RouterInner::new()
+            }),
+        }
+    }
+
+    /// Get the OpenTelemetry service name for this router.
+    pub fn service_name(&self) -> &'static str {
+        self.inner.service_name()
+    }
+
+    /// Set the OpenTelemetry service name for this router, overriding any
+    /// existing name.
+    ///
+    /// ## Note
+    ///
+    /// Routers wrap an `Arc`. If multiple references to the router exist,
+    /// this method will clone the inner state before setting the name.
+    pub fn set_name(self, service_name: &'static str) -> Self {
+        tap_inner!(self, mut this => {
+            this.service_name = Some(service_name);
+        })
+    }
+
     /// If this router is the only reference to its inner state, return the
     /// inner state. Otherwise, clone the inner state and return the clone.
     fn into_inner(self) -> RouterInner<S> {
@@ -104,6 +133,7 @@ where
                 routes: arc.routes.clone(),
                 last_id: arc.last_id,
                 fallback: arc.fallback.clone(),
+                service_name: arc.service_name,
                 name_to_id: arc.name_to_id.clone(),
                 id_to_name: arc.id_to_name.clone(),
             },
@@ -301,7 +331,7 @@ where
     pub fn call_with_state(&self, args: HandlerArgs, state: S) -> RouteFuture {
         let id = args.req().id_owned();
         let method = args.req().method();
-        let span = debug_span!(parent: None, "Router::call_with_state", %method, ?id);
+        let span = debug_span!(parent: args.span(), "Router::call_with_state", %method, ?id);
 
         self.inner.call_with_state(args, state).with_span(span)
     }
@@ -313,23 +343,29 @@ where
         inbound: InboundData,
         state: S,
     ) -> BatchFuture {
-        let mut fut = BatchFuture::new_with_capacity(inbound.single(), inbound.len());
+        let mut fut =
+            BatchFuture::new_with_capacity(inbound.single(), self.service_name(), inbound.len());
         // According to spec, non-parsable requests should still receive a
         // response.
-        let span = debug_span!(parent: None, "BatchFuture::poll", reqs = inbound.len(), futs = tracing::field::Empty);
+        let batch_span = debug_span!(parent: ctx.span(), "BatchFuture::poll", reqs = inbound.len(), futs = tracing::field::Empty);
 
-        for (batch_idx, req) in inbound.iter().enumerate() {
+        for req in inbound.iter() {
             let req = req.map(|req| {
-                let span = debug_span!(parent: &span, "RouteFuture::poll", batch_idx, method = req.method(), id = ?req.id());
-                let args = HandlerArgs::new(ctx.clone(), req);
+                // This resets the `TracingInfo`, which means each
+                // ctx has a separate span with similar metadata.
+                let ctx = ctx.child_ctx(self, Some(&batch_span));
+                let request_span = ctx.span().clone();
+
+                // Several span fields are populated in `HandlerArgs::new`.
+                let args = HandlerArgs::new(ctx, req);
                 self.inner
                     .call_with_state(args, state.clone())
-                    .with_span(span)
+                    .with_span(request_span)
             });
             fut.push_parse_result(req);
         }
-        span.record("futs", fut.len());
-        fut.with_span(span)
+        batch_span.record("futs", fut.len());
+        fut.with_span(batch_span)
     }
 
     /// Nest this router into a new Axum router, with the specified path and the currently-running
@@ -473,6 +509,10 @@ pub(crate) struct RouterInner<S> {
     /// The handler to call when no method is found.
     fallback: Method<S>,
 
+    /// An optional service name for OpenTelemetry tracing. This is not
+    /// set by default.
+    service_name: Option<&'static str>,
+
     // next 2 fields are used for reverse lookup of method names
     /// A map from method names to their IDs.
     name_to_id: BTreeMap<Cow<'static, str>, MethodId>,
@@ -502,6 +542,8 @@ impl<S> RouterInner<S> {
 
             fallback: Method::Ready(Route::default_fallback()),
 
+            service_name: None,
+
             name_to_id: BTreeMap::new(),
             id_to_name: BTreeMap::new(),
         }
@@ -523,9 +565,15 @@ impl<S> RouterInner<S> {
                 .collect(),
             fallback: self.fallback.with_state(state),
             last_id: self.last_id,
+            service_name: self.service_name,
             name_to_id: self.name_to_id,
             id_to_name: self.id_to_name,
         }
+    }
+
+    /// Get the OpenTelemetry service name for this router.
+    fn service_name(&self) -> &'static str {
+        self.service_name.unwrap_or("ajj")
     }
 
     /// Get the next available ID.
@@ -612,6 +660,9 @@ impl<S> RouterInner<S> {
     #[track_caller]
     pub(crate) fn call_with_state(&self, args: HandlerArgs, state: S) -> RouteFuture {
         let method = args.req().method();
+
+        crate::metrics::record_call(self.service_name(), method);
+
         self.method_by_name(method)
             .unwrap_or(&self.fallback)
             .call_with_state(args, state)
