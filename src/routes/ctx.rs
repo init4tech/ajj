@@ -8,7 +8,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_util::sync::WaitForCancellationFutureOwned;
-use tracing::{enabled, error, Level};
+use tracing::{enabled, Level};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Errors that can occur when sending notifications.
