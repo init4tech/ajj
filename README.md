@@ -100,6 +100,12 @@ reproduced from the following projects, and we are grateful for their work:
 - [alloy] - for the `ResponsePayload` and associated structs, the `RpcSend` and
   `RpcRecv` family of traits, and the `JsonReadStream` in the `ipc` module.
 
+## Note for AI agents
+
+AI agents working on this codebase should consult the Claude skill at
+`.claude/skills/ajj-guide.md` for a comprehensive overview of the crate
+architecture, key types, internal patterns, and testing conventions.
+
 [crate documentation on docs.rs]: https://docs.rs/ajj/latest/ajj/
 [`Connect`]: https://docs.rs/ajj/latest/ajj/pubsub/trait.Connect.html
 [JSON-RPC 2.0]: https://www.jsonrpc.org/specification
