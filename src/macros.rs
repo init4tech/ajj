@@ -104,7 +104,7 @@ macro_rules! impl_handler_call {
 
     (@unpack_params $span:expr, $id:expr, $service:expr, $method:expr, $req:expr) => {{
             let Ok(params) = $req.deser_params() else {
-            impl_handler_call!(@finish $span, $id, $service, $method, &ResponsePayload::<(), ()>::invalid_params());
+            impl_handler_call!(@finish $span, $id, $service, $method, ResponsePayload::<(), ()>::invalid_params());
         };
         drop($req); // no longer needed
         params
@@ -112,7 +112,7 @@ macro_rules! impl_handler_call {
 
     (@unpack_struct_params $span:expr, $id:expr, $service:expr, $method:expr, $req:expr) => {{
             let Ok(params) = $req.deser_params() else {
-            impl_handler_call!(@finish $span, $id, $service, $method, &ResponsePayload::<(), ()>::invalid_params());
+            impl_handler_call!(@finish $span, $id, $service, $method, ResponsePayload::<(), ()>::invalid_params());
         };
         drop($req); // no longer needed
         params
@@ -138,7 +138,7 @@ macro_rules! impl_handler_call {
         Box::pin(
             async move {
                 let payload: $crate::ResponsePayload<_, _> = $this().await.into();
-                impl_handler_call!(@finish span, id, service, &method, &payload);
+                impl_handler_call!(@finish span, id, service, &method, payload);
             }
             .instrument(inst),
         )
@@ -152,7 +152,7 @@ macro_rules! impl_handler_call {
         Box::pin(
             async move {
                 let payload: $crate::ResponsePayload<_, _> = $this(ctx).await.into();
-                impl_handler_call!(@finish span, id, service, &method, &payload);
+                impl_handler_call!(@finish span, id, service, &method, payload);
             }
             .instrument(inst),
         )
@@ -168,7 +168,7 @@ macro_rules! impl_handler_call {
             async move {
                 let params: $params_ty = impl_handler_call!(@unpack_params span, id, service, &method, req);
                 let payload: $crate::ResponsePayload<_, _> = $this(params.into()).await.into();
-                impl_handler_call!(@finish span, id, service, &method, &payload);
+                impl_handler_call!(@finish span, id, service, &method, payload);
             }
             .instrument(inst),
         )
@@ -184,7 +184,7 @@ macro_rules! impl_handler_call {
         Box::pin(
             async move {
                 let payload: $crate::ResponsePayload<_, _> = $this($state).await.into();
-                impl_handler_call!(@finish span, id, service, &method, &payload);
+                impl_handler_call!(@finish span, id, service, &method, payload);
             }
             .instrument(inst),
         )
@@ -199,7 +199,7 @@ macro_rules! impl_handler_call {
             async move {
                 let params: $params_ty = impl_handler_call!(@unpack_params span, id, service, &method, req);
                 let payload: $crate::ResponsePayload<_, _> = $this(ctx, params.into()).await.into();
-                impl_handler_call!(@finish span, id, service, &method, &payload);
+                impl_handler_call!(@finish span, id, service, &method, payload);
             }
             .instrument(inst),
         )
@@ -213,7 +213,7 @@ macro_rules! impl_handler_call {
         Box::pin(
             async move {
                 let payload: $crate::ResponsePayload<_, _> = $this(ctx, $state).await.into();
-                impl_handler_call!(@finish span, id, service, &method, &payload);
+                impl_handler_call!(@finish span, id, service, &method, payload);
             }
             .instrument(inst),
         )
@@ -228,7 +228,7 @@ macro_rules! impl_handler_call {
             async move {
                 let params: $params_ty = impl_handler_call!(@unpack_params span, id, service, &method, req);
                 let payload: $crate::ResponsePayload<_, _> = $this(params.into(), $state).await.into();
-                impl_handler_call!(@finish span, id, service, &method, &payload);
+                impl_handler_call!(@finish span, id, service, &method, payload);
             }
             .instrument(inst),
         )
@@ -242,7 +242,7 @@ macro_rules! impl_handler_call {
             async move {
                 let params: $params_ty = impl_handler_call!(@unpack_params span, id, service, &method, req);
                 let payload: $crate::ResponsePayload<_, _> = $this(ctx, params.into(), $state).await.into();
-                impl_handler_call!(@finish span, id, service, &method, &payload);
+                impl_handler_call!(@finish span, id, service, &method, payload);
             }
             .instrument(inst),
         )

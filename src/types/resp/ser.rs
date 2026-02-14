@@ -1,6 +1,7 @@
-use crate::ResponsePayload;
+use crate::{ErrorPayload, ResponsePayload, RpcSend};
 use serde::{ser::SerializeMap, Serialize, Serializer};
 use serde_json::value::RawValue;
+use std::{borrow::Cow, sync::LazyLock};
 
 /// Response struct.
 #[derive(Debug, Clone)]
@@ -9,14 +10,28 @@ pub(crate) struct Response<'a, 'b, T, E> {
     pub(crate) payload: &'a ResponsePayload<T, E>,
 }
 
+/// Pre-serialized parse error response (null id, static payload).
+static PARSE_ERROR_RESPONSE: LazyLock<Box<RawValue>> = LazyLock::new(|| {
+    let payload = ResponsePayload::<(), ()>::parse_error();
+    let resp = Response::<(), ()> {
+        id: RawValue::NULL,
+        payload: &payload,
+    };
+    serde_json::value::to_raw_value(&resp).expect("parse error response is valid json")
+});
+
+/// Error payload for serialization failures. Borrowed by
+/// [`Response::serialization_failure`] on each invocation.
+static SER_FAILURE_PAYLOAD: ResponsePayload<(), ()> = ResponsePayload(Err(ErrorPayload {
+    code: -32700,
+    message: Cow::Borrowed("response serialization error"),
+    data: None,
+}));
+
 impl Response<'_, '_, (), ()> {
     /// Parse error response, used when the request is not valid JSON.
     pub(crate) fn parse_error() -> Box<RawValue> {
-        Response::<(), ()> {
-            id: RawValue::NULL,
-            payload: &ResponsePayload::parse_error(),
-        }
-        .to_json()
+        PARSE_ERROR_RESPONSE.clone()
     }
 
     /// Method not found response, used in default fallback handler.
@@ -35,13 +50,41 @@ impl Response<'_, '_, (), ()> {
         id.map(Self::method_not_found)
     }
 
-    /// Response failed to serialize
+    /// Response failed to serialize. The error payload is memoized in a
+    /// static; only the envelope serialization (with the dynamic id)
+    /// happens per call.
     pub(crate) fn serialization_failure(id: &RawValue) -> Box<RawValue> {
-        RawValue::from_string(format!(
-            r#"{{"jsonrpc":"2.0","id":{},"error":{{"code":-32700,"message":"response serialization error"}}}}"#,
-            id.get()
-        ))
-        .expect("valid json")
+        let resp = Response::<(), ()> {
+            id,
+            payload: &SER_FAILURE_PAYLOAD,
+        };
+        serde_json::value::to_raw_value(&resp).expect("serialization_failure is infallible")
+    }
+
+    /// Build a JSON-RPC response from an id and a payload.
+    ///
+    /// The payload is consumed and pre-serialized via
+    /// [`RpcSend::into_raw_value`] into [`Box<RawValue>`], then the
+    /// JSON-RPC envelope is serialized around it. Serializing
+    /// [`Box<RawValue>`] embeds the raw bytes directly, so the payload
+    /// data is not re-serialized.
+    pub(crate) fn build_response<T, E>(
+        id: Option<&RawValue>,
+        payload: ResponsePayload<T, E>,
+    ) -> Option<Box<RawValue>>
+    where
+        T: RpcSend,
+        E: RpcSend,
+    {
+        let id = id?;
+        let raw = match payload.into_raw() {
+            Ok(raw) => raw,
+            Err(err) => {
+                tracing::debug!(%err, ?id, "failed to serialize response payload");
+                return Some(Self::serialization_failure(id));
+            }
+        };
+        Some(Response { id, payload: &raw }.to_json())
     }
 }
 
@@ -50,14 +93,7 @@ where
     T: Serialize,
     E: Serialize,
 {
-    pub(crate) fn build_response(
-        id: Option<&'b RawValue>,
-        payload: &'a ResponsePayload<T, E>,
-    ) -> Option<Box<RawValue>> {
-        id.map(move |id| Self { id, payload }.to_json())
-    }
-
-    pub(crate) fn to_json(&self) -> Box<RawValue> {
+    fn to_json(&self) -> Box<RawValue> {
         serde_json::value::to_raw_value(self).unwrap_or_else(|err| {
             tracing::debug!(%err, id = ?self.id, "failed to serialize response");
             Response::serialization_failure(self.id)

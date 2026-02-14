@@ -56,13 +56,13 @@
 //! when calling methods on the JSON-RPC router.
 //!
 //! Handlers can return either
-//! - `Result<T, E> where T: Serialize, E: Serialize`
-//! - `ResponsePayload<T, E> where T: Serialize, E: Serialize`
+//! - `Result<T, E> where T: RpcSend, E: RpcSend`
+//! - `ResponsePayload<T, E> where T: RpcSend, E: RpcSend`
 //!
-//! These types will be serialized into the JSON-RPC response. The `T` type
-//! represents the result of the method, and the `E` type represents an error
-//! response. The `E` type is optional, and can be set to `()` if no error
-//! response is needed.
+//! These types will be serialized into the JSON-RPC response via
+//! [`RpcSend::into_raw_value`]. The `T` type represents the result of the
+//! method, and the `E` type represents an error response. The `E` type is
+//! optional, and can be set to `()` if no error response is needed.
 //!
 //! See the [`Handler`] trait docs for more information.
 //!
