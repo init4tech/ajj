@@ -234,6 +234,10 @@ where
     E: RpcSend,
 {
     /// Serialize the inner data into a [`RawValue`].
+    ///
+    /// Prefer [`into_raw`](Self::into_raw), which consumes the error payload
+    /// and avoids requiring [`Serialize`].
+    #[deprecated(note = "use `into_raw` instead")]
     pub fn serialize_payload(&self) -> serde_json::Result<ErrorPayload>
     where
         E: Serialize,
