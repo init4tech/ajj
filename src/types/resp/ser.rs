@@ -1,6 +1,7 @@
-use crate::{ResponsePayload, RpcSend};
+use crate::{ErrorPayload, ResponsePayload, RpcSend};
 use serde::{ser::SerializeMap, Serialize, Serializer};
 use serde_json::value::RawValue;
+use std::borrow::Cow;
 
 /// Response struct.
 #[derive(Debug, Clone)]
@@ -37,18 +38,24 @@ impl Response<'_, '_, (), ()> {
 
     /// Response failed to serialize
     pub(crate) fn serialization_failure(id: &RawValue) -> Box<RawValue> {
-        RawValue::from_string(format!(
-            r#"{{"jsonrpc":"2.0","id":{},"error":{{"code":-32700,"message":"response serialization error"}}}}"#,
-            id.get()
-        ))
-        .expect("valid json")
+        let resp = Response::<(), ()> {
+            id,
+            payload: &ResponsePayload(Err(ErrorPayload {
+                code: -32700,
+                message: Cow::Borrowed("response serialization error"),
+                data: None,
+            })),
+        };
+        serde_json::value::to_raw_value(&resp).expect("serialization_failure is infallible")
     }
 
     /// Build a JSON-RPC response from an id and a payload.
     ///
     /// The payload is consumed and pre-serialized via
-    /// [`RpcSend::into_raw_value`], then embedded directly into the
-    /// JSON-RPC envelope string without a second serialization pass.
+    /// [`RpcSend::into_raw_value`] into [`Box<RawValue>`], then the
+    /// JSON-RPC envelope is serialized around it. Serializing
+    /// [`Box<RawValue>`] embeds the raw bytes directly, so the payload
+    /// data is not re-serialized.
     pub(crate) fn build_response<T, E>(
         id: Option<&RawValue>,
         payload: ResponsePayload<T, E>,
@@ -65,32 +72,7 @@ impl Response<'_, '_, (), ()> {
                 return Some(Self::serialization_failure(id));
             }
         };
-        let json = match raw.0 {
-            Ok(result) => {
-                format!(
-                    r#"{{"jsonrpc":"2.0","id":{},"result":{}}}"#,
-                    id.get(),
-                    result.get()
-                )
-            }
-            Err(error) => match serde_json::to_string(&error) {
-                Ok(error_json) => {
-                    format!(
-                        r#"{{"jsonrpc":"2.0","id":{},"error":{}}}"#,
-                        id.get(),
-                        error_json,
-                    )
-                }
-                Err(err) => {
-                    tracing::debug!(%err, ?id, "failed to serialize error payload");
-                    return Some(Self::serialization_failure(id));
-                }
-            },
-        };
-        Some(RawValue::from_string(json).unwrap_or_else(|err| {
-            tracing::debug!(%err, ?id, "failed to construct response");
-            Self::serialization_failure(id)
-        }))
+        Some(Response { id, payload: &raw }.to_json())
     }
 }
 
