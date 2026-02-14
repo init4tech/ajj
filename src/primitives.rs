@@ -33,6 +33,53 @@ impl AddAssign<usize> for MethodId {
 ///
 /// This marker trait is blanket-implemented for every qualifying type. It is
 /// used to indicate that a type can be sent in the body of a JSON-RPC message.
+///
+/// Note that this trait does **not** require [`Clone`]. Types that serialize
+/// computed or lazily-produced sequences can implement [`Serialize`] directly
+/// and be returned from handlers without collecting into a [`Vec`] first.
+///
+/// # Example: serializing an iterator without allocation
+///
+/// ```
+/// use ajj::RpcSend;
+/// use serde::{Serialize, ser::SerializeSeq, Serializer};
+/// use std::{fmt, sync::Mutex};
+///
+/// /// Wraps an iterator, serializing its items as a JSON array
+/// /// without collecting into a [`Vec`].
+/// struct IterResponse<T>(Mutex<Option<T>>);
+///
+/// impl<T: fmt::Debug> fmt::Debug for IterResponse<T> {
+///     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+///         f.debug_tuple("IterResponse").field(&self.0).finish()
+///     }
+/// }
+///
+/// impl<'a, T> Serialize for IterResponse<T>
+/// where
+///     T: Iterator<Item = &'a usize>,
+/// {
+///     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+///         let mut seq = serializer.serialize_seq(None)?;
+///         if let Some(iter) = self.0.lock().unwrap().take() {
+///             for item in iter {
+///                 seq.serialize_element(item)?;
+///             }
+///         }
+///         seq.end()
+///     }
+/// }
+///
+/// let data = vec![1usize, 2, 3];
+/// let resp = IterResponse(Mutex::new(Some(data.iter())));
+///
+/// // IterResponse satisfies RpcSend without implementing Clone.
+/// fn is_rpc_send(_: &impl RpcSend) {}
+/// is_rpc_send(&resp);
+///
+/// let json = serde_json::to_string(&resp).unwrap();
+/// assert_eq!(json, "[1,2,3]");
+/// ```
 pub trait RpcSend: Serialize + fmt::Debug + Send + Sync + Unpin {}
 
 impl<T> RpcSend for T where T: Serialize + fmt::Debug + Send + Sync + Unpin {}
