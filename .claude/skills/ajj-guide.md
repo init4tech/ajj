@@ -139,7 +139,7 @@ an internal error code. For custom error codes/messages, return
 
 ### Primitive Traits
 
-- `RpcSend` - `Serialize + Clone + Send + Sync + Unpin + 'static`
+- `RpcSend` - `Serialize + Debug + Send + Sync + Unpin`
 - `RpcRecv` - `DeserializeOwned + Send + Sync + Unpin + 'static`
 - `RpcBorrow<'de>` - `Deserialize<'de> + Send + Sync + Unpin + 'static`
 - `MethodId` - internal u64 identifier for methods

@@ -33,9 +33,9 @@ impl AddAssign<usize> for MethodId {
 ///
 /// This marker trait is blanket-implemented for every qualifying type. It is
 /// used to indicate that a type can be sent in the body of a JSON-RPC message.
-pub trait RpcSend: Serialize + Clone + fmt::Debug + Send + Sync + Unpin {}
+pub trait RpcSend: Serialize + fmt::Debug + Send + Sync + Unpin {}
 
-impl<T> RpcSend for T where T: Serialize + Clone + fmt::Debug + Send + Sync + Unpin {}
+impl<T> RpcSend for T where T: Serialize + fmt::Debug + Send + Sync + Unpin {}
 
 /// An object that can be received over RPC.
 ///
