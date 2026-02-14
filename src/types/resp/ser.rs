@@ -1,7 +1,7 @@
 use crate::{ErrorPayload, ResponsePayload, RpcSend};
 use serde::{ser::SerializeMap, Serialize, Serializer};
 use serde_json::value::RawValue;
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::LazyLock};
 
 /// Response struct.
 #[derive(Debug, Clone)]
@@ -10,14 +10,28 @@ pub(crate) struct Response<'a, 'b, T, E> {
     pub(crate) payload: &'a ResponsePayload<T, E>,
 }
 
+/// Pre-serialized parse error response (null id, static payload).
+static PARSE_ERROR_RESPONSE: LazyLock<Box<RawValue>> = LazyLock::new(|| {
+    let payload = ResponsePayload::<(), ()>::parse_error();
+    let resp = Response::<(), ()> {
+        id: RawValue::NULL,
+        payload: &payload,
+    };
+    serde_json::value::to_raw_value(&resp).expect("parse error response is valid json")
+});
+
+/// Error payload for serialization failures. Borrowed by
+/// [`Response::serialization_failure`] on each invocation.
+static SER_FAILURE_PAYLOAD: ResponsePayload<(), ()> = ResponsePayload(Err(ErrorPayload {
+    code: -32700,
+    message: Cow::Borrowed("response serialization error"),
+    data: None,
+}));
+
 impl Response<'_, '_, (), ()> {
     /// Parse error response, used when the request is not valid JSON.
     pub(crate) fn parse_error() -> Box<RawValue> {
-        Response::<(), ()> {
-            id: RawValue::NULL,
-            payload: &ResponsePayload::parse_error(),
-        }
-        .to_json()
+        PARSE_ERROR_RESPONSE.clone()
     }
 
     /// Method not found response, used in default fallback handler.
@@ -36,15 +50,13 @@ impl Response<'_, '_, (), ()> {
         id.map(Self::method_not_found)
     }
 
-    /// Response failed to serialize
+    /// Response failed to serialize. The error payload is memoized in a
+    /// static; only the envelope serialization (with the dynamic id)
+    /// happens per call.
     pub(crate) fn serialization_failure(id: &RawValue) -> Box<RawValue> {
         let resp = Response::<(), ()> {
             id,
-            payload: &ResponsePayload(Err(ErrorPayload {
-                code: -32700,
-                message: Cow::Borrowed("response serialization error"),
-                data: None,
-            })),
+            payload: &SER_FAILURE_PAYLOAD,
         };
         serde_json::value::to_raw_value(&resp).expect("serialization_failure is infallible")
     }
