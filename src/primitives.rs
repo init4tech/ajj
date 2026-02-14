@@ -1,7 +1,4 @@
-use core::{
-    fmt,
-    ops::{Add, AddAssign},
-};
+use core::ops::{Add, AddAssign};
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -34,26 +31,21 @@ impl AddAssign<usize> for MethodId {
 /// This marker trait is blanket-implemented for every qualifying type. It is
 /// used to indicate that a type can be sent in the body of a JSON-RPC message.
 ///
-/// Note that this trait does **not** require [`Clone`]. Types that serialize
-/// computed or lazily-produced sequences can implement [`Serialize`] directly
-/// and be returned from handlers without collecting into a [`Vec`] first.
+/// Note that this trait does **not** require [`Clone`] or [`Debug`]. Types
+/// that serialize computed or lazily-produced sequences can implement
+/// [`Serialize`] directly and be returned from handlers without collecting
+/// into a [`Vec`] first.
 ///
 /// # Example: serializing an iterator without allocation
 ///
 /// ```
 /// use ajj::RpcSend;
 /// use serde::{Serialize, ser::SerializeSeq, Serializer};
-/// use std::{fmt, sync::Mutex};
+/// use std::sync::Mutex;
 ///
 /// /// Wraps an iterator, serializing its items as a JSON array
 /// /// without collecting into a [`Vec`].
 /// struct IterResponse<T>(Mutex<Option<T>>);
-///
-/// impl<T: fmt::Debug> fmt::Debug for IterResponse<T> {
-///     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-///         f.debug_tuple("IterResponse").field(&self.0).finish()
-///     }
-/// }
 ///
 /// impl<'a, T> Serialize for IterResponse<T>
 /// where
@@ -73,16 +65,16 @@ impl AddAssign<usize> for MethodId {
 /// let data = vec![1usize, 2, 3];
 /// let resp = IterResponse(Mutex::new(Some(data.iter())));
 ///
-/// // IterResponse satisfies RpcSend without implementing Clone.
+/// // IterResponse satisfies RpcSend without implementing Clone or Debug.
 /// fn is_rpc_send(_: &impl RpcSend) {}
 /// is_rpc_send(&resp);
 ///
 /// let json = serde_json::to_string(&resp).unwrap();
 /// assert_eq!(json, "[1,2,3]");
 /// ```
-pub trait RpcSend: Serialize + fmt::Debug + Send + Sync + Unpin {}
+pub trait RpcSend: Serialize + Send + Sync + Unpin {}
 
-impl<T> RpcSend for T where T: Serialize + fmt::Debug + Send + Sync + Unpin {}
+impl<T> RpcSend for T where T: Serialize + Send + Sync + Unpin {}
 
 /// An object that can be received over RPC.
 ///
@@ -96,9 +88,9 @@ impl<T> RpcSend for T where T: Serialize + fmt::Debug + Send + Sync + Unpin {}
 /// can't borrow. This is a simplification that makes it easier to use the
 /// types in client code. Servers may prefer borrowing, using the [`RpcBorrow`]
 /// trait.
-pub trait RpcRecv: DeserializeOwned + fmt::Debug + Send + Sync + Unpin + 'static {}
+pub trait RpcRecv: DeserializeOwned + Send + Sync + Unpin + 'static {}
 
-impl<T> RpcRecv for T where T: DeserializeOwned + fmt::Debug + Send + Sync + Unpin + 'static {}
+impl<T> RpcRecv for T where T: DeserializeOwned + Send + Sync + Unpin + 'static {}
 
 /// An object that can be received over RPC, borrowing from the the
 /// deserialization context.
@@ -106,9 +98,9 @@ impl<T> RpcRecv for T where T: DeserializeOwned + fmt::Debug + Send + Sync + Unp
 /// This marker trait is blanket-implemented for every qualifying type. It is
 /// used to indicate that a type can be borrowed from the body of a wholly or
 /// partially serialized JSON-RPC message.
-pub trait RpcBorrow<'de>: Deserialize<'de> + fmt::Debug + Send + Sync + Unpin {}
+pub trait RpcBorrow<'de>: Deserialize<'de> + Send + Sync + Unpin {}
 
-impl<'de, T> RpcBorrow<'de> for T where T: Deserialize<'de> + fmt::Debug + Send + Sync + Unpin {}
+impl<'de, T> RpcBorrow<'de> for T where T: Deserialize<'de> + Send + Sync + Unpin {}
 
 /// An object that can be both sent and received over RPC.
 ///
