@@ -1,4 +1,4 @@
-use crate::ResponsePayload;
+use crate::{ResponsePayload, RpcSend};
 use serde::{ser::SerializeMap, Serialize, Serializer};
 use serde_json::value::RawValue;
 
@@ -43,6 +43,31 @@ impl Response<'_, '_, (), ()> {
         ))
         .expect("valid json")
     }
+
+    /// Build a JSON-RPC response from an id and a payload.
+    ///
+    /// The payload is consumed and pre-serialized via
+    /// [`RpcSend::into_raw_value`] before being wrapped in the JSON-RPC
+    /// envelope.
+    pub(crate) fn build_response<T, E>(
+        id: Option<&RawValue>,
+        payload: ResponsePayload<T, E>,
+    ) -> Option<Box<RawValue>>
+    where
+        T: RpcSend,
+        E: RpcSend,
+    {
+        let id = id?;
+        let raw = match payload.into_raw() {
+            Ok(raw) => raw,
+            Err(err) => {
+                tracing::debug!(%err, ?id, "failed to serialize response payload");
+                return Some(Self::serialization_failure(id));
+            }
+        };
+        let resp = Response { id, payload: &raw };
+        Some(resp.to_json())
+    }
 }
 
 impl<'a, 'b, T, E> Response<'a, 'b, T, E>
@@ -50,14 +75,7 @@ where
     T: Serialize,
     E: Serialize,
 {
-    pub(crate) fn build_response(
-        id: Option<&'b RawValue>,
-        payload: &'a ResponsePayload<T, E>,
-    ) -> Option<Box<RawValue>> {
-        id.map(move |id| Self { id, payload }.to_json())
-    }
-
-    pub(crate) fn to_json(&self) -> Box<RawValue> {
+    fn to_json(&self) -> Box<RawValue> {
         serde_json::value::to_raw_value(self).unwrap_or_else(|err| {
             tracing::debug!(%err, id = ?self.id, "failed to serialize response");
             Response::serialization_failure(self.id)

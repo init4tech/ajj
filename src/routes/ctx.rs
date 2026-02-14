@@ -264,9 +264,15 @@ impl HandlerCtx {
     }
 
     /// Notify a client of an event.
-    pub async fn notify<T: RpcSend>(&self, t: &T) -> Result<(), NotifyError> {
+    ///
+    /// Takes `t` by value to support consuming [`RpcSend`] implementations.
+    /// For [`Serialize`] types, pass a reference (`&item`) — references
+    /// implement [`RpcSend`] via the blanket impl.
+    ///
+    /// [`Serialize`]: serde::Serialize
+    pub async fn notify<T: RpcSend>(&self, t: T) -> Result<(), NotifyError> {
         if let Some(notifications) = self.notifications.as_ref() {
-            let rv = serde_json::value::to_raw_value(t)?;
+            let rv = t.into_raw_value()?;
             notifications
                 .send(WriteItem {
                     span: self.span().clone(),

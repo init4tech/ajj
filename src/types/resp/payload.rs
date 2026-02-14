@@ -234,7 +234,10 @@ where
     E: RpcSend,
 {
     /// Serialize the inner data into a [`RawValue`].
-    pub fn serialize_payload(&self) -> serde_json::Result<ErrorPayload> {
+    pub fn serialize_payload(&self) -> serde_json::Result<ErrorPayload>
+    where
+        E: Serialize,
+    {
         Ok(ErrorPayload {
             code: self.code,
             message: self.message.clone(),
@@ -243,6 +246,33 @@ where
                 None => None,
             },
         })
+    }
+
+    /// Consume this error payload, serializing the data field into a
+    /// [`RawValue`].
+    pub fn into_raw(self) -> serde_json::Result<ErrorPayload> {
+        Ok(ErrorPayload {
+            code: self.code,
+            message: self.message,
+            data: self.data.map(|d| d.into_raw_value()).transpose()?,
+        })
+    }
+}
+
+impl<T, E> ResponsePayload<T, E>
+where
+    T: RpcSend,
+    E: RpcSend,
+{
+    /// Consume this response payload, serializing the result and error data
+    /// into [`RawValue`]s.
+    pub(crate) fn into_raw(
+        self,
+    ) -> serde_json::Result<ResponsePayload<Box<RawValue>, Box<RawValue>>> {
+        match self.0 {
+            Ok(payload) => Ok(ResponsePayload(Ok(payload.into_raw_value()?))),
+            Err(err) => Ok(ResponsePayload(Err(err.into_raw()?))),
+        }
     }
 }
 

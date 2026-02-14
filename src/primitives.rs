@@ -1,6 +1,6 @@
 use core::ops::{Add, AddAssign};
-
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde_json::value::RawValue;
 
 /// A unique internal identifier for a method.
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -28,53 +28,73 @@ impl AddAssign<usize> for MethodId {
 
 /// An object that can be sent over RPC.
 ///
-/// This marker trait is blanket-implemented for every qualifying type. It is
-/// used to indicate that a type can be sent in the body of a JSON-RPC message.
+/// This trait is blanket-implemented for every [`Serialize`] type that
+/// satisfies the required bounds. It is used to indicate that a type can
+/// be sent in the body of a JSON-RPC message.
 ///
-/// Note that this trait does **not** require [`Clone`] or [`Debug`]. Types
-/// that serialize computed or lazily-produced sequences can implement
-/// [`Serialize`] directly and be returned from handlers without collecting
-/// into a [`Vec`] first.
+/// The [`into_raw_value`] method consumes `self` and produces a serialized
+/// [`RawValue`]. This consuming interface allows types like iterators to
+/// be serialized without intermediate allocation (e.g., collecting into a
+/// [`Vec`]).
+///
+/// Note that this trait does **not** require [`Clone`] or [`Debug`].
+///
+/// # Custom implementations
+///
+/// Types that do not implement [`Serialize`] can implement `RpcSend`
+/// directly by providing a custom [`into_raw_value`]. This is useful for
+/// lazily-produced sequences or pre-serialized data.
 ///
 /// # Example: serializing an iterator without allocation
 ///
 /// ```
 /// use ajj::RpcSend;
-/// use serde::{Serialize, ser::SerializeSeq, Serializer};
-/// use std::sync::Mutex;
+/// use serde::Serialize;
+/// use serde_json::value::RawValue;
 ///
 /// /// Wraps an iterator, serializing its items as a JSON array
 /// /// without collecting into a [`Vec`].
-/// struct IterResponse<T>(Mutex<Option<T>>);
+/// struct IterResponse<T>(T);
 ///
-/// impl<'a, T> Serialize for IterResponse<T>
+/// impl<T, Item> RpcSend for IterResponse<T>
 /// where
-///     T: Iterator<Item = &'a usize>,
+///     T: Iterator<Item = Item> + Send + Sync + Unpin,
+///     Item: Serialize,
 /// {
-///     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-///         let mut seq = serializer.serialize_seq(None)?;
-///         if let Some(iter) = self.0.lock().unwrap().take() {
-///             for item in iter {
-///                 seq.serialize_element(item)?;
+///     fn into_raw_value(self) -> serde_json::Result<Box<RawValue>> {
+///         let mut json = String::from("[");
+///         for (i, item) in self.0.enumerate() {
+///             if i > 0 {
+///                 json.push(',');
 ///             }
+///             json.push_str(&serde_json::to_string(&item)?);
 ///         }
-///         seq.end()
+///         json.push(']');
+///         RawValue::from_string(json)
 ///     }
 /// }
 ///
 /// let data = vec![1usize, 2, 3];
-/// let resp = IterResponse(Mutex::new(Some(data.iter())));
+/// let resp = IterResponse(data.into_iter());
 ///
-/// // IterResponse satisfies RpcSend without implementing Clone or Debug.
-/// fn is_rpc_send(_: &impl RpcSend) {}
-/// is_rpc_send(&resp);
-///
-/// let json = serde_json::to_string(&resp).unwrap();
-/// assert_eq!(json, "[1,2,3]");
+/// let json = resp.into_raw_value().unwrap();
+/// assert_eq!(json.get(), "[1,2,3]");
 /// ```
-pub trait RpcSend: Serialize + Send + Sync + Unpin {}
+///
+/// [`into_raw_value`]: RpcSend::into_raw_value
+pub trait RpcSend: Send + Sync + Unpin {
+    /// Consume this value and serialize it into a [`RawValue`].
+    fn into_raw_value(self) -> serde_json::Result<Box<RawValue>>;
+}
 
-impl<T> RpcSend for T where T: Serialize + Send + Sync + Unpin {}
+impl<T> RpcSend for T
+where
+    T: Serialize + Send + Sync + Unpin,
+{
+    fn into_raw_value(self) -> serde_json::Result<Box<RawValue>> {
+        serde_json::value::to_raw_value(&self)
+    }
+}
 
 /// An object that can be received over RPC.
 ///
