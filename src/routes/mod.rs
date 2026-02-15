@@ -1,5 +1,5 @@
 mod ctx;
-pub use ctx::{HandlerArgs, HandlerCtx, NotifyError, TracingInfo};
+pub use ctx::{HandlerArgs, HandlerCtx, NotifyError, NotifyPermit, OwnedNotifyPermit, TracingInfo};
 
 mod erased;
 pub(crate) use erased::{BoxedIntoRoute, ErasedIntoRoute, MakeErasedHandler};

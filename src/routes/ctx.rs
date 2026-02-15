@@ -29,6 +29,64 @@ impl From<SendError<WriteItem>> for NotifyError {
     }
 }
 
+/// A borrowed permit to send a single notification.
+///
+/// Created by [`HandlerCtx::permit`] or [`HandlerCtx::try_permit`].
+/// The permit guarantees a slot in the notification channel, making
+/// [`send`] synchronous — only serialization can fail.
+///
+/// [`send`]: NotifyPermit::send
+#[derive(Debug)]
+pub struct NotifyPermit<'a> {
+    permit: mpsc::Permit<'a, WriteItem>,
+    span: tracing::Span,
+}
+
+impl<'a> NotifyPermit<'a> {
+    /// Send a notification using this permit.
+    ///
+    /// The permit guarantees a channel slot, so this is synchronous.
+    /// Only serialization can fail.
+    pub fn send<T: RpcSend>(self, t: T) -> Result<(), serde_json::Error> {
+        let json = t.into_raw_value()?;
+        self.permit.send(WriteItem {
+            span: self.span,
+            json,
+        });
+        Ok(())
+    }
+}
+
+/// An owned permit to send a single notification.
+///
+/// Created by [`HandlerCtx::permit_owned`],
+/// [`HandlerCtx::try_permit_owned`], [`HandlerCtx::permit_many`],
+/// or [`HandlerCtx::try_permit_many`]. The permit guarantees a slot
+/// in the notification channel, making [`send`] synchronous — only
+/// serialization can fail.
+///
+/// [`send`]: OwnedNotifyPermit::send
+#[derive(Debug)]
+pub struct OwnedNotifyPermit {
+    permit: mpsc::OwnedPermit<WriteItem>,
+    span: tracing::Span,
+}
+
+impl OwnedNotifyPermit {
+    /// Send a notification using this permit.
+    ///
+    /// The permit guarantees a channel slot, so this is synchronous.
+    /// Only serialization can fail.
+    pub fn send<T: RpcSend>(self, t: T) -> Result<(), serde_json::Error> {
+        let json = t.into_raw_value()?;
+        self.permit.send(WriteItem {
+            span: self.span,
+            json,
+        });
+        Ok(())
+    }
+}
+
 /// Tracing information for OpenTelemetry. This struct is used to store
 /// information about the current request that can be used for tracing.
 #[derive(Debug, Clone)]
@@ -251,6 +309,15 @@ impl HandlerCtx {
             .unwrap_or_default()
     }
 
+    /// Returns the maximum capacity of the notification channel, or `0` if
+    /// notifications are not enabled.
+    pub fn notification_capacity(&self) -> usize {
+        self.notifications
+            .as_ref()
+            .map(|tx| tx.max_capacity())
+            .unwrap_or_default()
+    }
+
     /// Create a request span for a handler invocation.
     pub fn init_request_span<S>(
         &self,
@@ -309,6 +376,104 @@ impl HandlerCtx {
             self.notify(item).await?;
         }
         Ok(())
+    }
+
+    /// Reserve a permit to send a single notification.
+    ///
+    /// Returns `None` if notifications are not enabled or the channel
+    /// is closed. Awaits until a channel slot is available.
+    pub async fn permit(&self) -> Option<NotifyPermit<'_>> {
+        let permit = self.notifications.as_ref()?.reserve().await.ok()?;
+        Some(NotifyPermit {
+            permit,
+            span: self.span().clone(),
+        })
+    }
+
+    /// Reserve an owned permit to send a single notification.
+    ///
+    /// Returns `None` if notifications are not enabled or the channel
+    /// is closed. Awaits until a channel slot is available.
+    pub async fn permit_owned(&self) -> Option<OwnedNotifyPermit> {
+        let permit = self
+            .notifications
+            .as_ref()?
+            .clone()
+            .reserve_owned()
+            .await
+            .ok()?;
+        Some(OwnedNotifyPermit {
+            permit,
+            span: self.span().clone(),
+        })
+    }
+
+    /// Try to reserve a permit to send a single notification.
+    ///
+    /// Returns `None` if notifications are not enabled, the channel
+    /// is closed, or the channel is full.
+    pub fn try_permit(&self) -> Option<NotifyPermit<'_>> {
+        let permit = self.notifications.as_ref()?.try_reserve().ok()?;
+        Some(NotifyPermit {
+            permit,
+            span: self.span().clone(),
+        })
+    }
+
+    /// Try to reserve an owned permit to send a single notification.
+    ///
+    /// Returns `None` if notifications are not enabled, the channel
+    /// is closed, or the channel is full.
+    pub fn try_permit_owned(&self) -> Option<OwnedNotifyPermit> {
+        let permit = self
+            .notifications
+            .as_ref()?
+            .clone()
+            .try_reserve_owned()
+            .ok()?;
+        Some(OwnedNotifyPermit {
+            permit,
+            span: self.span().clone(),
+        })
+    }
+
+    /// Reserve `n` owned permits to send notifications.
+    ///
+    /// This is all-or-nothing: returns `None` if the channel closes
+    /// during acquisition, dropping any already-acquired permits.
+    /// Returns `None` if notifications are not enabled.
+    pub async fn permit_many(&self, n: usize) -> Option<impl Iterator<Item = OwnedNotifyPermit>> {
+        let sender = self.notifications.as_ref()?;
+        let span = self.span().clone();
+        let mut permits = Vec::with_capacity(n);
+        for _ in 0..n {
+            let permit = sender.clone().reserve_owned().await.ok()?;
+            permits.push(OwnedNotifyPermit {
+                permit,
+                span: span.clone(),
+            });
+        }
+        Some(permits.into_iter())
+    }
+
+    /// Try to reserve `n` owned permits to send notifications.
+    ///
+    /// This is all-or-nothing: returns `None` if any permit cannot
+    /// be acquired. Returns `None` if notifications are not enabled,
+    /// the channel is closed, or the channel has fewer than `n`
+    /// available slots.
+    pub fn try_permit_many(&self, n: usize) -> Option<impl Iterator<Item = OwnedNotifyPermit>> {
+        let sender = self.notifications.as_ref()?;
+        let span = self.span().clone();
+        let mut permits = Vec::with_capacity(n);
+        for _ in 0..n {
+            let permit = sender.clone().try_reserve_owned().ok()?;
+            permits.push(OwnedNotifyPermit {
+                permit,
+                span: span.clone(),
+            });
+        }
+        Some(permits.into_iter())
     }
 
     /// Spawn a task on the task set. This task will be cancelled if the
