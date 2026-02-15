@@ -346,7 +346,10 @@ impl HandlerCtx {
     /// was cancelled, and `Some` otherwise.
     ///
     /// [`Stream`]: tokio_stream::Stream
-    pub fn spawn_notify_stream<S, T>(&self, stream: S) -> JoinHandle<Option<Result<(), NotifyError>>>
+    pub fn spawn_notify_stream<S, T>(
+        &self,
+        stream: S,
+    ) -> JoinHandle<Option<Result<(), NotifyError>>>
     where
         S: tokio_stream::Stream<Item = T> + Send + 'static,
         T: RpcSend + 'static,
