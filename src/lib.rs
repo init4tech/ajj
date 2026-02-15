@@ -172,8 +172,8 @@ pub use pubsub::ReadJsonStream;
 
 mod routes;
 pub use routes::{
-    BatchFuture, Handler, HandlerArgs, HandlerCtx, NotifyError, Params, RouteFuture, State,
-    TracingInfo,
+    BatchFuture, Handler, HandlerArgs, HandlerCtx, NotifyError, NotifyPermit, OwnedNotifyPermit,
+    Params, RouteFuture, State, TracingInfo,
 };
 pub(crate) use routes::{BoxedIntoRoute, ErasedIntoRoute, Method, Route};
 
