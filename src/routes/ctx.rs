@@ -7,6 +7,7 @@ use tokio::{
     sync::mpsc::{self, error::SendError},
     task::JoinHandle,
 };
+use tokio_stream::StreamExt;
 use tokio_util::sync::WaitForCancellationFutureOwned;
 use tracing::{enabled, Level};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -284,6 +285,32 @@ impl HandlerCtx {
         Ok(())
     }
 
+    /// Forward a [`Stream`] into the notification
+    /// channel.
+    ///
+    /// Each item produced by the stream is serialized and sent as a
+    /// notification. This continues until the stream is exhausted or
+    /// an error occurs.
+    ///
+    /// If notifications are not enabled on this context, the stream
+    /// is not consumed and this returns `Ok(())` immediately.
+    ///
+    /// [`Stream`]: tokio_stream::Stream
+    pub async fn notify_stream<S, T>(&self, stream: S) -> Result<(), NotifyError>
+    where
+        S: tokio_stream::Stream<Item = T> + Send,
+        T: RpcSend,
+    {
+        if !self.notifications_enabled() {
+            return Ok(());
+        }
+        tokio::pin!(stream);
+        while let Some(item) = stream.next().await {
+            self.notify(item).await?;
+        }
+        Ok(())
+    }
+
     /// Spawn a task on the task set. This task will be cancelled if the
     /// client disconnects. This is useful for long-running server tasks.
     ///
@@ -310,6 +337,23 @@ impl HandlerCtx {
         Fut::Output: Send + 'static,
     {
         self.tasks.spawn_cancellable(f(self.clone()))
+    }
+
+    /// Spawn a task that forwards a [`Stream`] into the notification
+    /// channel. The task will be cancelled if the client disconnects.
+    ///
+    /// The resulting [`JoinHandle`] will contain [`None`] if the task
+    /// was cancelled, and `Some` otherwise.
+    ///
+    /// [`Stream`]: tokio_stream::Stream
+    pub fn spawn_notify_stream<S, T>(&self, stream: S) -> JoinHandle<Option<Result<(), NotifyError>>>
+    where
+        S: tokio_stream::Stream<Item = T> + Send + 'static,
+        T: RpcSend + 'static,
+    {
+        let ctx = self.clone();
+        self.tasks
+            .spawn_cancellable(async move { ctx.notify_stream(stream).await })
     }
 
     /// Spawn a task that may block on the task set. This task may block, and
