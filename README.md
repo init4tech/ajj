@@ -1,5 +1,19 @@
 # ajj: A Json-RPC Router
 
+[![Crates.io][crates-badge]][crates-url]
+[![Documentation][docs-badge]][docs-url]
+[![CI status][ci-badge]][ci-url]
+[![MIT licensed][license-badge]][license-url]
+
+[crates-badge]: https://img.shields.io/crates/v/ajj.svg
+[crates-url]: https://crates.io/crates/ajj
+[docs-badge]: https://img.shields.io/docsrs/ajj
+[docs-url]: https://docs.rs/ajj
+[ci-badge]: https://github.com/init4tech/ajj/actions/workflows/rust.yml/badge.svg
+[ci-url]: https://github.com/init4tech/ajj/actions/workflows/rust.yml
+[license-badge]: https://img.shields.io/badge/license-MIT-blue.svg
+[license-url]: https://github.com/init4tech/ajj/blob/main/LICENSE
+
 A general-purpose, batteries-included [JSON-RPC 2.0] router, inspired by
 [axum]'s routing system.
 
@@ -49,7 +63,7 @@ let router = Router::<u64>::new()
 ## Feature flags
 
 - `axum` - implements the `tower::Service` trait for `Router`, allowing it to
-  be used as an [axum]() handler.
+  be used as an [axum] handler.
 - `pubsub` - adds traits and tasks for serving the router over streaming
   interfaces.
 - `ws` - adds implementations of the `pubsub` traits for
@@ -71,7 +85,7 @@ implementations.
 
 See the [crate documentation on docs.rs] for more detailed examples.
 
-## Specification Complinace
+## Specification Compliance
 
 `ajj` aims to be fully compliant with the [JSON-RPC 2.0] specification. If any
 issues are found, please [open an issue]!
