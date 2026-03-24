@@ -32,7 +32,7 @@ fn make_router() -> ajj::Router<()> {
         .route("notify", |ctx: HandlerCtx| async move {
             // Check if notifications are enabled for the connection.
             if !ctx.notifications_enabled() {
-                // This error will appear in the ResponsePayload's `data` field.
+                // This error will appear in the ResponsePayload's `message` field.
                 return Err("notifications are disabled");
             }
 
