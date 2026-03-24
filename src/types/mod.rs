@@ -10,8 +10,8 @@ mod req;
 pub(crate) use req::Request;
 
 mod resp;
-pub(crate) use resp::Response;
 pub use resp::{ErrorPayload, InternalError, IntoErrorPayload, ResponsePayload};
+pub(crate) use resp::{IntoResponsePayload, Response};
 
 mod error;
 pub(crate) use error::RequestError;

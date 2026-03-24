@@ -1,5 +1,6 @@
 use crate::{
-    routes::HandlerArgs, types::Response, HandlerCtx, ResponsePayload, Route, RpcRecv, RpcSend,
+    routes::HandlerArgs, types::Response, HandlerCtx, IntoErrorPayload, ResponsePayload, Route,
+    RpcRecv, RpcSend,
 };
 use serde_json::value::RawValue;
 use std::{convert::Infallible, future::Future, marker::PhantomData, pin::Pin, task};
@@ -643,7 +644,7 @@ where
     F: FnOnce() -> Fut + Clone + Send + Sync + 'static,
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
@@ -657,7 +658,7 @@ where
     F: FnOnce(HandlerCtx) -> Fut + Clone + Send + Sync + 'static,
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
@@ -672,7 +673,7 @@ where
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Input: RpcRecv,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
@@ -687,7 +688,7 @@ where
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Input: RpcRecv,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
@@ -701,7 +702,7 @@ where
     F: FnOnce(S) -> Fut + Clone + Send + Sync + 'static,
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
     S: Send + Sync + 'static,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
@@ -716,7 +717,7 @@ where
     F: FnOnce(State<S>) -> Fut + Clone + Send + Sync + 'static,
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
     S: Send + Sync + 'static,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
@@ -733,7 +734,7 @@ where
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Input: RpcRecv,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
@@ -748,7 +749,7 @@ where
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Input: RpcRecv,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
@@ -763,7 +764,7 @@ where
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Input: RpcRecv,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
     S: Send + Sync + 'static,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
@@ -778,7 +779,7 @@ where
     F: FnOnce(HandlerCtx, S) -> Fut + Clone + Send + Sync + 'static,
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
     S: Send + Sync + 'static,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
@@ -793,7 +794,7 @@ where
     F: FnOnce(HandlerCtx, State<S>) -> Fut + Clone + Send + Sync + 'static,
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
     S: Send + Sync + 'static,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
@@ -809,7 +810,7 @@ where
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Input: RpcRecv,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
     S: Send + Sync + 'static,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
