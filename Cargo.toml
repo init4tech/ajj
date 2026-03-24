@@ -90,3 +90,7 @@ required-features = ["axum", "pubsub"]
 [[example]]
 name = "cors"
 required-features = ["axum"]
+
+[[example]]
+name = "magic8ball"
+required-features = ["axum"]
