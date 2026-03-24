@@ -1,3 +1,6 @@
+mod into_error;
+pub use into_error::{InternalError, IntoErrorPayload};
+
 mod payload;
 pub use payload::{ErrorPayload, ResponsePayload};
 

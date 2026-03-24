@@ -11,7 +11,7 @@ pub(crate) use req::Request;
 
 mod resp;
 pub(crate) use resp::Response;
-pub use resp::{ErrorPayload, ResponsePayload};
+pub use resp::{ErrorPayload, InternalError, IntoErrorPayload, ResponsePayload};
 
 mod error;
 pub(crate) use error::RequestError;

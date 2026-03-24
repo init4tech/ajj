@@ -184,7 +184,7 @@ mod tasks;
 pub(crate) use tasks::TaskSet;
 
 mod types;
-pub use types::{ErrorPayload, ResponsePayload};
+pub use types::{ErrorPayload, InternalError, IntoErrorPayload, ResponsePayload};
 
 /// Re-export of the `tower` crate, primarily to provide [`tower::Service`],
 /// and [`tower::service_fn`].
