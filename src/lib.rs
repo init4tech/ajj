@@ -61,9 +61,10 @@
 //!
 //! For `Result`-returning handlers, the error type controls the JSON-RPC
 //! error code, message, and optional data via [`IntoErrorPayload`]. Common
-//! error types like `String`, `&str`, `()`, and [`InternalError<T>`] already
-//! implement this trait. The `T` type represents the successful result of the
-//! method, serialized via [`RpcSend::into_raw_value`].
+//! error types like `String`, `&str`, `()`, [`InternalError<T>`], and
+//! [`ErrorPayload<E>`] already implement this trait. The `T` type represents
+//! the successful result of the method, serialized via
+//! [`RpcSend::into_raw_value`].
 //!
 //! See the [`Handler`] trait docs for more information.
 //!

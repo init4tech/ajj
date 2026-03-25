@@ -1,3 +1,4 @@
 /target
+/docs
 */.DS_Store
 Cargo.lock

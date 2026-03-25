@@ -50,8 +50,7 @@ pub struct PhantomParams<T>(PhantomData<T>);
 /// - **`()`** -- produces code `-32603` with the default `"Internal error"`
 ///   message.
 /// - **[`InternalError<T>`]** -- produces code `-32603` with `T` as the
-///   `data` field. Has a blanket [`From<T>`] impl, so it works with the
-///   `?` operator to reproduce the old `E: RpcSend` behavior.
+///   `data` field.
 /// - **[`ErrorPayload<E>`]** -- passed through as-is.
 ///
 /// ```
@@ -70,8 +69,7 @@ pub struct PhantomParams<T>(PhantomData<T>);
 /// # }
 /// let handler_b = || async { Err::<(), MyError>(MyError) };
 ///
-/// // InternalError<T> wraps any RpcSend value as `-32603` error data,
-/// // matching the old `E: RpcSend` behavior.
+/// // InternalError<T> wraps any RpcSend value as `-32603` error data.
 /// let handler_c = || async { Err::<(), InternalError<u32>>(InternalError(42)) };
 ///
 /// // Or return a ResponsePayload directly for complete control.

@@ -121,10 +121,6 @@ pub trait IntoErrorPayload {
 /// A wrapper that maps any `T: RpcSend` into a JSON-RPC "Internal error"
 /// (`-32603`) with `T` as the error data.
 ///
-/// `InternalError` implements [`From<T>`] for ergonomic use with the `?`
-/// operator: any error type can be converted into an `InternalError`
-/// automatically.
-///
 /// # Example
 ///
 /// ```
@@ -138,12 +134,6 @@ pub trait IntoErrorPayload {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InternalError<T>(pub T);
-
-impl<T> From<T> for InternalError<T> {
-    fn from(value: T) -> Self {
-        Self(value)
-    }
-}
 
 impl<T: RpcSend> IntoErrorPayload for InternalError<T> {
     type ErrData = T;
@@ -239,12 +229,6 @@ mod tests {
         assert_eq!(payload.code, -32603);
         assert_eq!(payload.message, "Internal error");
         assert_eq!(payload.data, Some(42u64));
-    }
-
-    #[test]
-    fn internal_error_from() {
-        let err: InternalError<u64> = 42u64.into();
-        assert_eq!(err.0, 42u64);
     }
 
     #[test]
