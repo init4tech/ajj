@@ -14,18 +14,6 @@ const INTERNAL_ERROR: Cow<'_, str> = Cow::Borrowed("Internal error");
 #[repr(transparent)]
 pub struct ResponsePayload<Payload, ErrData>(pub Result<Payload, ErrorPayload<ErrData>>);
 
-impl<T, E> From<Result<T, E>> for ResponsePayload<T, E>
-where
-    E: RpcSend,
-{
-    fn from(res: Result<T, E>) -> Self {
-        match res {
-            Ok(payload) => Self(Ok(payload)),
-            Err(err) => Self(Err(ErrorPayload::internal_error_with_obj(err))),
-        }
-    }
-}
-
 impl<Payload, ErrData> ResponsePayload<Payload, ErrData> {
     /// Create a new error payload for a parse error.
     pub const fn parse_error() -> Self {
@@ -104,18 +92,6 @@ impl<Payload, ErrData> ResponsePayload<Payload, ErrData> {
     /// Returns `true` if the response payload is an error.
     pub const fn is_error(&self) -> bool {
         matches!(self, Self(Err(_)))
-    }
-
-    /// Convert a result into a response payload, by converting the error into
-    /// an internal error message.
-    pub fn convert_internal_error_msg<T>(res: Result<Payload, T>) -> Self
-    where
-        T: Into<Cow<'static, str>>,
-    {
-        match res {
-            Ok(payload) => Self(Ok(payload)),
-            Err(err) => Self(Err(ErrorPayload::internal_error_message(err.into()))),
-        }
     }
 }
 
@@ -212,19 +188,6 @@ impl<E> ErrorPayload<E> {
             code: -32603,
             message,
             data: Some(data),
-        }
-    }
-}
-
-impl<T> From<T> for ErrorPayload<T>
-where
-    T: std::error::Error + RpcSend,
-{
-    fn from(value: T) -> Self {
-        Self {
-            code: -32603,
-            message: INTERNAL_ERROR,
-            data: Some(value),
         }
     }
 }

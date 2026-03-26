@@ -25,7 +25,7 @@
 //!   // Routes get a ctx, which can be used to send notifications.
 //!   .route("notify", |ctx: HandlerCtx| async move {
 //!     if !ctx.notifications_enabled() {
-//!       // This error will appear in the ResponsePayload's `data` field.
+//!       // This error will appear in the ResponsePayload's `message` field.
 //!       return Err("notifications are disabled");
 //!     }
 //!
@@ -56,13 +56,15 @@
 //! when calling methods on the JSON-RPC router.
 //!
 //! Handlers can return either
-//! - `Result<T, E> where T: RpcSend, E: RpcSend`
+//! - `Result<T, E> where T: RpcSend, E: IntoErrorPayload`
 //! - `ResponsePayload<T, E> where T: RpcSend, E: RpcSend`
 //!
-//! These types will be serialized into the JSON-RPC response via
-//! [`RpcSend::into_raw_value`]. The `T` type represents the result of the
-//! method, and the `E` type represents an error response. The `E` type is
-//! optional, and can be set to `()` if no error response is needed.
+//! For `Result`-returning handlers, the error type controls the JSON-RPC
+//! error code, message, and optional data via [`IntoErrorPayload`]. Common
+//! error types like `String`, `&str`, `()`, [`InternalError<T>`], and
+//! [`ErrorPayload<E>`] already implement this trait. The `T` type represents
+//! the successful result of the method, serialized via
+//! [`RpcSend::into_raw_value`].
 //!
 //! See the [`Handler`] trait docs for more information.
 //!
@@ -184,7 +186,7 @@ mod tasks;
 pub(crate) use tasks::TaskSet;
 
 mod types;
-pub use types::{ErrorPayload, ResponsePayload};
+pub use types::{ErrorPayload, InternalError, IntoErrorPayload, ResponsePayload};
 
 /// Re-export of the `tower` crate, primarily to provide [`tower::Service`],
 /// and [`tower::service_fn`].

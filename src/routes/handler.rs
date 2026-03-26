@@ -1,5 +1,6 @@
 use crate::{
-    routes::HandlerArgs, types::Response, HandlerCtx, ResponsePayload, Route, RpcRecv, RpcSend,
+    routes::HandlerArgs, types::Response, HandlerCtx, IntoErrorPayload, ResponsePayload, Route,
+    RpcRecv, RpcSend,
 };
 use serde_json::value::RawValue;
 use std::{convert::Infallible, future::Future, marker::PhantomData, pin::Pin, task};
@@ -38,19 +39,48 @@ pub struct PhantomParams<T>(PhantomData<T>);
 ///
 /// ### Returning error messages
 ///
-/// Note that when a [`Handler`] returns a `Result`, the error type will be in
-/// the [`ResponsePayload`]'s `data` field, and the message and code will
-/// indicate an internal server error. To return a response with an error code
-/// and custom `message` field, use a handler that returns an instance of the
-/// [`ResponsePayload`] enum, and instantiate that error payload manually.
+/// When a [`Handler`] returns a `Result`, the error type must implement
+/// [`IntoErrorPayload`]. This trait controls the JSON-RPC error code,
+/// message, and optional structured data in the response.
+///
+/// Several common types already implement [`IntoErrorPayload`]:
+///
+/// - **`String` / `&str`** -- produces code `-32603` with the string as
+///   the `message` field.
+/// - **`()`** -- produces code `-32603` with the default `"Internal error"`
+///   message.
+/// - **[`InternalError<T>`]** -- produces code `-32603` with `T` as the
+///   `data` field.
+/// - **[`ErrorPayload<E>`]** -- passed through as-is.
 ///
 /// ```
-/// # use ajj::ResponsePayload;
-/// let handler_a = || async { Err::<(), _>("appears in \"data\"") };
-/// let handler_b = || async {
+/// # use ajj::{IntoErrorPayload, InternalError, ErrorPayload, ResponsePayload};
+/// # use std::borrow::Cow;
+/// // String errors: the string appears in the `message` field.
+/// let handler_a = || async { Err::<(), _>("something went wrong") };
+///
+/// // Custom IntoErrorPayload impl for full control.
+/// # #[derive(Debug, Clone)]
+/// # struct MyError;
+/// # impl IntoErrorPayload for MyError {
+/// #     type ErrData = ();
+/// #     fn error_code(&self) -> i64 { 42 }
+/// #     fn error_message(&self) -> Cow<'static, str> { "my error".into() }
+/// # }
+/// let handler_b = || async { Err::<(), MyError>(MyError) };
+///
+/// // InternalError<T> wraps any RpcSend value as `-32603` error data.
+/// let handler_c = || async { Err::<(), InternalError<u32>>(InternalError(42)) };
+///
+/// // Or return a ResponsePayload directly for complete control.
+/// let handler_d = || async {
 ///     ResponsePayload::<(), ()>::internal_error_message("appears in \"message\"".into())
 /// };
 /// ```
+///
+/// [`IntoErrorPayload`]: crate::IntoErrorPayload
+/// [`InternalError<T>`]: crate::InternalError
+/// [`ErrorPayload<E>`]: crate::ErrorPayload
 ///
 /// ### The [`HandlerCtx`]: tasks and notifications.
 ///
@@ -261,8 +291,9 @@ pub struct PhantomParams<T>(PhantomData<T>);
 /// ## Blanket Implementations
 ///
 /// This trait is blanket implemented for the following function and closure
-/// types, where `Fut` is a [`Future`] returning either [`ResponsePayload`] or
-/// [`Result`]:
+/// types, where `Fut` is a [`Future`] returning either
+/// `ResponsePayload<T: RpcSend, E: RpcSend>` or
+/// `Result<T: RpcSend, E: IntoErrorPayload>`:
 ///
 /// - `async fn()`
 /// - `async fn(HandlerCtx) -> Fut`
@@ -643,7 +674,7 @@ where
     F: FnOnce() -> Fut + Clone + Send + Sync + 'static,
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
@@ -657,7 +688,7 @@ where
     F: FnOnce(HandlerCtx) -> Fut + Clone + Send + Sync + 'static,
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
@@ -672,7 +703,7 @@ where
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Input: RpcRecv,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
@@ -687,7 +718,7 @@ where
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Input: RpcRecv,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
@@ -701,7 +732,7 @@ where
     F: FnOnce(S) -> Fut + Clone + Send + Sync + 'static,
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
     S: Send + Sync + 'static,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
@@ -716,7 +747,7 @@ where
     F: FnOnce(State<S>) -> Fut + Clone + Send + Sync + 'static,
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
     S: Send + Sync + 'static,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
@@ -733,7 +764,7 @@ where
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Input: RpcRecv,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
@@ -748,7 +779,7 @@ where
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Input: RpcRecv,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
 
@@ -763,7 +794,7 @@ where
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Input: RpcRecv,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
     S: Send + Sync + 'static,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
@@ -778,7 +809,7 @@ where
     F: FnOnce(HandlerCtx, S) -> Fut + Clone + Send + Sync + 'static,
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
     S: Send + Sync + 'static,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
@@ -793,7 +824,7 @@ where
     F: FnOnce(HandlerCtx, State<S>) -> Fut + Clone + Send + Sync + 'static,
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
     S: Send + Sync + 'static,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;
@@ -809,7 +840,7 @@ where
     Fut: Future<Output = Result<Payload, ErrData>> + Send + 'static,
     Input: RpcRecv,
     Payload: RpcSend,
-    ErrData: RpcSend,
+    ErrData: IntoErrorPayload,
     S: Send + Sync + 'static,
 {
     type Future = Pin<Box<dyn Future<Output = Option<Box<RawValue>>> + Send>>;

@@ -137,7 +137,8 @@ macro_rules! impl_handler_call {
 
         Box::pin(
             async move {
-                let payload: $crate::ResponsePayload<_, _> = $this().await.into();
+                use $crate::types::IntoResponsePayload as _;
+                let payload = $this().await.into_response_payload();
                 impl_handler_call!(@finish span, id, service, &method, payload);
             }
             .instrument(inst),
@@ -151,7 +152,8 @@ macro_rules! impl_handler_call {
 
         Box::pin(
             async move {
-                let payload: $crate::ResponsePayload<_, _> = $this(ctx).await.into();
+                use $crate::types::IntoResponsePayload as _;
+                let payload = $this(ctx).await.into_response_payload();
                 impl_handler_call!(@finish span, id, service, &method, payload);
             }
             .instrument(inst),
@@ -166,8 +168,9 @@ macro_rules! impl_handler_call {
 
         Box::pin(
             async move {
+                use $crate::types::IntoResponsePayload as _;
                 let params: $params_ty = impl_handler_call!(@unpack_params span, id, service, &method, req);
-                let payload: $crate::ResponsePayload<_, _> = $this(params.into()).await.into();
+                let payload = $this(params.into()).await.into_response_payload();
                 impl_handler_call!(@finish span, id, service, &method, payload);
             }
             .instrument(inst),
@@ -183,7 +186,8 @@ macro_rules! impl_handler_call {
 
         Box::pin(
             async move {
-                let payload: $crate::ResponsePayload<_, _> = $this($state).await.into();
+                use $crate::types::IntoResponsePayload as _;
+                let payload = $this($state).await.into_response_payload();
                 impl_handler_call!(@finish span, id, service, &method, payload);
             }
             .instrument(inst),
@@ -197,8 +201,9 @@ macro_rules! impl_handler_call {
 
         Box::pin(
             async move {
+                use $crate::types::IntoResponsePayload as _;
                 let params: $params_ty = impl_handler_call!(@unpack_params span, id, service, &method, req);
-                let payload: $crate::ResponsePayload<_, _> = $this(ctx, params.into()).await.into();
+                let payload = $this(ctx, params.into()).await.into_response_payload();
                 impl_handler_call!(@finish span, id, service, &method, payload);
             }
             .instrument(inst),
@@ -212,7 +217,8 @@ macro_rules! impl_handler_call {
 
         Box::pin(
             async move {
-                let payload: $crate::ResponsePayload<_, _> = $this(ctx, $state).await.into();
+                use $crate::types::IntoResponsePayload as _;
+                let payload = $this(ctx, $state).await.into_response_payload();
                 impl_handler_call!(@finish span, id, service, &method, payload);
             }
             .instrument(inst),
@@ -226,8 +232,9 @@ macro_rules! impl_handler_call {
 
         Box::pin(
             async move {
+                use $crate::types::IntoResponsePayload as _;
                 let params: $params_ty = impl_handler_call!(@unpack_params span, id, service, &method, req);
-                let payload: $crate::ResponsePayload<_, _> = $this(params.into(), $state).await.into();
+                let payload = $this(params.into(), $state).await.into_response_payload();
                 impl_handler_call!(@finish span, id, service, &method, payload);
             }
             .instrument(inst),
@@ -240,8 +247,9 @@ macro_rules! impl_handler_call {
 
         Box::pin(
             async move {
+                use $crate::types::IntoResponsePayload as _;
                 let params: $params_ty = impl_handler_call!(@unpack_params span, id, service, &method, req);
-                let payload: $crate::ResponsePayload<_, _> = $this(ctx, params.into(), $state).await.into();
+                let payload = $this(ctx, params.into(), $state).await.into_response_payload();
                 impl_handler_call!(@finish span, id, service, &method, payload);
             }
             .instrument(inst),
