@@ -11,8 +11,8 @@ use std::borrow::Cow;
 ///
 /// # Provided methods
 ///
-/// Only [`error_code`] is required. The remaining methods have sensible
-/// defaults:
+/// Only [`error_code`] and the associated type `ErrData` must be specified.
+/// The remaining methods have sensible defaults:
 ///
 /// | Method               | Default                                |
 /// |----------------------|----------------------------------------|
@@ -41,8 +41,8 @@ use std::borrow::Cow;
 ///
 ///     fn error_code(&self) -> i64 {
 ///         match self {
-///             Self::NotFound(_) => 404,
-///             Self::RateLimited { .. } => 429,
+///             Self::NotFound(_) => 1001,
+///             Self::RateLimited { .. } => 1002,
 ///         }
 ///     }
 ///
@@ -65,7 +65,7 @@ use std::borrow::Cow;
 ///
 /// let err = AppError::NotFound("user/42".into());
 /// let payload = err.into_error_payload();
-/// assert_eq!(payload.code, 404);
+/// assert_eq!(payload.code, 1001);
 /// assert_eq!(payload.message, "Not found");
 /// assert_eq!(payload.data.as_deref(), Some("user/42"));
 /// ```
@@ -215,6 +215,14 @@ impl IntoErrorPayload for () {
     }
 }
 
+impl IntoErrorPayload for core::convert::Infallible {
+    type ErrData = ();
+
+    fn error_code(&self) -> i64 {
+        match *self {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,15 +242,15 @@ mod tests {
     #[test]
     fn error_payload_identity() {
         let original = ErrorPayload {
-            code: 404,
+            code: 1001,
             message: Cow::Borrowed("Not found"),
             data: Some("missing".to_string()),
         };
-        assert_eq!(original.error_code(), 404);
+        assert_eq!(original.error_code(), 1001);
         assert_eq!(original.error_message(), "Not found");
 
         let payload = original.into_error_payload();
-        assert_eq!(payload.code, 404);
+        assert_eq!(payload.code, 1001);
         assert_eq!(payload.message, "Not found");
         assert_eq!(payload.data.as_deref(), Some("missing"));
     }
@@ -309,7 +317,7 @@ mod tests {
 
             fn error_code(&self) -> i64 {
                 match self {
-                    Self::NotFound(_) => 404,
+                    Self::NotFound(_) => 1001,
                     Self::Internal => -32603,
                 }
             }
@@ -331,7 +339,7 @@ mod tests {
 
         let err = AppError::NotFound("user/42".into());
         let payload = err.into_error_payload();
-        assert_eq!(payload.code, 404);
+        assert_eq!(payload.code, 1001);
         assert_eq!(payload.message, "Not found");
         assert_eq!(payload.data.as_deref(), Some("user/42"));
 
