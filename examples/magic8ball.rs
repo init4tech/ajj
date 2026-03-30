@@ -81,10 +81,10 @@ impl IntoErrorPayload for MysticError {
 
     fn error_code(&self) -> i64 {
         match self {
-            Self::CrystalBallCloudy => -32001,
-            Self::StarsMisaligned { .. } => -32002,
-            Self::MercuryRetrograde => -32003,
-            Self::UnreadableAura(_) => -32004,
+            Self::CrystalBallCloudy => 2001,
+            Self::StarsMisaligned { .. } => 2002,
+            Self::MercuryRetrograde => 2003,
+            Self::UnreadableAura(_) => 2004,
         }
     }
 
@@ -100,7 +100,7 @@ impl IntoErrorPayload for MysticError {
     fn into_error_payload(self) -> ErrorPayload<Box<serde_json::value::RawValue>> {
         let code = self.error_code();
         let message = self.error_message();
-        let data = match &self {
+        let data = match self {
             Self::CrystalBallCloudy => serde_json::value::to_raw_value(&CloudyDetail {
                 visibility: "opaque",
                 suggestion: "try polishing the ball",
@@ -108,7 +108,7 @@ impl IntoErrorPayload for MysticError {
             .ok(),
             Self::StarsMisaligned { sign } => {
                 serde_json::value::to_raw_value(&MisalignmentDetail {
-                    sign: sign.clone(),
+                    sign,
                     interfering_planet: "Saturn",
                 })
                 .ok()
