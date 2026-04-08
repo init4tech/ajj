@@ -19,6 +19,18 @@ and ipc transports. Built on tower and serde_json.
 Always lint with both `--all-features` and `--no-default-features` before
 committing. Never use `cargo check` or `cargo build`.
 
+### Pre-push Checks (enforced by Claude hook)
+
+A Claude hook in `.claude/settings.json` runs `.claude/hooks/pre-push.sh`
+before every `git push`. The push is blocked if any check fails. The checks:
+
+- `cargo +nightly fmt -- --check`
+- `cargo clippy -p ajj --all-targets --all-features -- -D warnings`
+- `cargo clippy -p ajj --all-targets --no-default-features -- -D warnings`
+- `RUSTDOCFLAGS="-D warnings" cargo doc -p ajj --no-deps`
+
+Clippy and doc warnings are hard failures.
+
 ## Repo Conventions
 
 - Feature gates: `axum`, `pubsub`, `ws`, `ipc`. Default: `axum`, `ws`, `ipc`.
