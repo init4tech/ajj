@@ -1,4 +1,4 @@
-use metrics::{counter, gauge, Counter, Gauge};
+use metrics::{counter, gauge, histogram, Counter, Gauge, Histogram};
 use std::sync::LazyLock;
 
 /// Metric name for counting router calls.
@@ -45,6 +45,11 @@ pub(crate) const ACTIVE_CALLS_HELP: &str = "Number of active calls being process
 pub(crate) const COMPLETED_CALLS: &str = "ajj.router.completed_calls";
 pub(crate) const COMPLETED_CALLS_HELP: &str = "Number of completed calls handled";
 
+/// Metric for the uncompressed size in bytes of messages received from and sent to clients.
+pub(crate) const ROUTER_MESSAGE_SIZE: &str = "ajj.router.message_size_bytes";
+pub(crate) const ROUTER_MESSAGE_SIZE_HELP: &str =
+    "Uncompressed size in bytes of JSON-RPC messages received from and sent to clients.";
+
 static DESCRIBE: LazyLock<()> = LazyLock::new(|| {
     metrics::describe_counter!(ROUTER_CALLS, metrics::Unit::Count, ROUTER_CALLS_HELP);
     metrics::describe_counter!(ROUTER_ERRORS, metrics::Unit::Count, ROUTER_ERRORS_HELP);
@@ -75,6 +80,11 @@ static DESCRIBE: LazyLock<()> = LazyLock::new(|| {
     );
     metrics::describe_gauge!(ACTIVE_CALLS, metrics::Unit::Count, ACTIVE_CALLS_HELP);
     metrics::describe_counter!(COMPLETED_CALLS, metrics::Unit::Count, COMPLETED_CALLS_HELP);
+    metrics::describe_histogram!(
+        ROUTER_MESSAGE_SIZE,
+        metrics::Unit::Bytes,
+        ROUTER_MESSAGE_SIZE_HELP
+    );
 });
 
 /// Get or register a counter for calls to a specific service and method.
@@ -243,4 +253,24 @@ fn record_completed_call(service_name: &'static str, method: &str) {
     let _ = &DESCRIBE;
     let counter = completed_calls(service_name, method);
     counter.increment(1);
+}
+
+/// Get or register a histogram for message sizes on a specific service and direction.
+fn message_size(service_name: &'static str, direction: &'static str) -> Histogram {
+    let _ = &DESCRIBE;
+    histogram!(
+        ROUTER_MESSAGE_SIZE,
+        "service" => service_name.to_string(),
+        "direction" => direction,
+    )
+}
+
+/// Record the uncompressed size in bytes of a message sent or received on a service.
+pub(crate) fn record_message_size(
+    service_name: &'static str,
+    direction: &'static str,
+    bytes: usize,
+) {
+    let histogram = message_size(service_name, direction);
+    histogram.record(bytes as f64);
 }

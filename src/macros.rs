@@ -54,25 +54,31 @@ macro_rules! unwrap_infallible {
     };
 }
 
-/// Log a message event to the current span.
+/// Log a message event to the current span, and record its uncompressed size in the
+/// `ajj.router.message_size_bytes` histogram.
+///
+/// Per-message logs are emitted at `trace` level to avoid flooding production logs; operators
+/// should rely on the histogram metric for size visibility.
 ///
 /// See <https://github.com/open-telemetry/semantic-conventions/blob/d66109ff41e75f49587114e5bff9d101b87f40bd/docs/rpc/rpc-spans.md#events>
 macro_rules! message_event {
-    ($type:literal, counter: $counter:expr, bytes: $bytes:expr,) => {{
-        ::tracing::info!(
+    ($type:literal, service: $service:expr, counter: $counter:expr, bytes: $bytes:expr,) => {{
+        let bytes = $bytes;
+        ::tracing::trace!(
             "rpc.message.id" = $counter.fetch_add(1, ::std::sync::atomic::Ordering::Relaxed),
             "rpc.message.type" = $type,
-            "rpc.message.uncompressed_size" = $bytes,
+            "rpc.message.uncompressed_size" = bytes,
             "rpc.message"
         );
+        $crate::metrics::record_message_size($service, $type, bytes);
     }};
 
-    (@received, counter: $counter:expr, bytes: $bytes:expr, ) => {
-        message_event!("RECEIVED", counter: $counter, bytes: $bytes,);
+    (@received, service: $service:expr, counter: $counter:expr, bytes: $bytes:expr, ) => {
+        message_event!("RECEIVED", service: $service, counter: $counter, bytes: $bytes,);
     };
 
-    (@sent, counter: $counter:expr, bytes: $bytes:expr, ) => {
-        message_event!("SENT", counter: $counter, bytes: $bytes,);
+    (@sent, service: $service:expr, counter: $counter:expr, bytes: $bytes:expr, ) => {
+        message_event!("SENT", service: $service, counter: $counter, bytes: $bytes,);
     };
 }
 

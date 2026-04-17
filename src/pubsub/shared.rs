@@ -148,6 +148,7 @@ impl ConnectionManager {
             items: rx,
             connection,
             tx_msg_id: self.tx_msg_id.clone(),
+            service_name: self.router.service_name(),
         };
 
         (rt, wt)
@@ -272,6 +273,7 @@ where
                     span.in_scope(|| {
                         message_event!(
                             @received,
+                            service: router.service_name(),
                             counter: &rx_msg_id,
                             bytes: item_bytes,
                         );
@@ -334,6 +336,9 @@ struct WriteTask<T: Listener> {
 
     /// Counter for OTEL messages sent.
     pub(crate) tx_msg_id: Arc<AtomicU32>,
+
+    /// Service name, used to tag the `ajj.router.message_size_bytes` histogram.
+    pub(crate) service_name: &'static str,
 }
 
 impl<T: Listener> WriteTask<T> {
@@ -351,6 +356,7 @@ impl<T: Listener> WriteTask<T> {
             mut items,
             mut connection,
             tx_msg_id,
+            service_name,
             ..
         } = self;
 
@@ -370,6 +376,7 @@ impl<T: Listener> WriteTask<T> {
                     span.in_scope(|| {
                         message_event!(
                             @sent,
+                            service: service_name,
                             counter: &tx_msg_id,
                             bytes: json.get().len(),
                         );

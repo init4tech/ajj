@@ -95,6 +95,7 @@ where
             let req = ctx.span().in_scope(|| {
                 message_event!(
                     @received,
+                    service: self.router.service_name(),
                     counter: &self.rx_msg_id,
                     bytes: bytes.len(),
                 );
@@ -122,6 +123,7 @@ where
                 span.in_scope(|| {
                     message_event!(
                         @sent,
+                        service: self.router.service_name(),
                         counter: &self.tx_msg_id,
                         bytes: body.len(),
                     );
