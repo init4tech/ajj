@@ -4,51 +4,51 @@ use std::sync::LazyLock;
 /// Metric name for counting router calls.
 pub(crate) const ROUTER_CALLS: &str = "ajj.router.calls";
 pub(crate) const ROUTER_CALLS_HELP: &str =
-    "Number of calls to ajj router methods. Not all requests will result in a response.";
+    "Number of calls to ajj router methods (not all requests will result in a response)";
 
 /// Metric name for counting router error execution.
 pub(crate) const ROUTER_ERRORS: &str = "ajj.router.errors";
 pub(crate) const ROUTER_ERRORS_HELP: &str =
-    "Number of errored executions by ajj router methods. This does NOT imply a response was sent.";
+    "Number of errored executions by ajj router methods (this does NOT imply a response was sent)";
 
-// Metric name for counting router successful executions.
+/// Metric name for counting router successful executions.
 pub(crate) const ROUTER_SUCCESSES: &str = "ajj.router.successes";
 pub(crate) const ROUTER_SUCCESSES_HELP: &str =
-    "Number of successful executions by ajj router methods. This does NOT imply a response was sent.";
+    "Number of successful executions by ajj router methods (this does NOT imply a response was sent)";
 
 /// Metric name for counting router responses.
 pub(crate) const ROUTER_RESPONSES: &str = "ajj.router.responses";
 pub(crate) const ROUTER_RESPONSES_HELP: &str =
-    "Number of responses sent by ajj router methods. Not all requests will result in a response.";
+    "Number of responses sent by ajj router methods (not all requests will result in a response)";
 
-// Metric name for counting omitted notification responses.
+/// Metric name for counting omitted notification responses.
 pub(crate) const ROUTER_NOTIFICATION_RESPONSE_OMITTED: &str =
     "ajj.router.notification_response_omitted";
 pub(crate) const ROUTER_NOTIFICATION_RESPONSE_OMITTED_HELP: &str =
     "Number of times ajj router methods omitted a response to a notification";
 
-// Metric for counting parse errors.
+/// Metric for counting parse errors.
 pub(crate) const ROUTER_PARSE_ERRORS: &str = "ajj.router.parse_errors";
 pub(crate) const ROUTER_PARSE_ERRORS_HELP: &str =
-    "Number of parse errors encountered by ajj router methods. This implies no response was sent.";
+    "Number of parse errors encountered by ajj router methods (this implies no response was sent)";
 
 /// Metric for counting method not found errors.
 pub(crate) const ROUTER_METHOD_NOT_FOUND: &str = "ajj.router.method_not_found";
 pub(crate) const ROUTER_METHOD_NOT_FOUND_HELP: &str =
-    "Number of times ajj router methods encountered a method not found error. This implies a response was sent.";
+    "Number of times ajj router methods encountered a method not found error (this implies a response was sent)";
 
 /// Metric for tracking active calls.
 pub(crate) const ACTIVE_CALLS: &str = "ajj.router.active_calls";
 pub(crate) const ACTIVE_CALLS_HELP: &str = "Number of active calls being processed";
 
-/// Metric for tracking completed   calls.
+/// Metric for tracking completed calls.
 pub(crate) const COMPLETED_CALLS: &str = "ajj.router.completed_calls";
 pub(crate) const COMPLETED_CALLS_HELP: &str = "Number of completed calls handled";
 
 /// Metric for the uncompressed size in bytes of messages received from and sent to clients.
 pub(crate) const ROUTER_MESSAGE_SIZE: &str = "ajj.router.message_size_bytes";
 pub(crate) const ROUTER_MESSAGE_SIZE_HELP: &str =
-    "Uncompressed size in bytes of JSON-RPC messages received from and sent to clients.";
+    "Uncompressed size in bytes of JSON-RPC messages received from and sent to clients";
 
 static DESCRIBE: LazyLock<()> = LazyLock::new(|| {
     metrics::describe_counter!(ROUTER_CALLS, metrics::Unit::Count, ROUTER_CALLS_HELP);
