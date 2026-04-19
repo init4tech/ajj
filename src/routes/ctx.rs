@@ -201,7 +201,7 @@ impl TracingInfo {
     /// Panics if the span has not been initialized via
     /// [`Self::init_request_span`].
     #[track_caller]
-    fn request_span(&self) -> &tracing::Span {
+    pub(crate) fn request_span(&self) -> &tracing::Span {
         self.span.get().expect("span not initialized")
     }
 
