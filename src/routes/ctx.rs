@@ -1,4 +1,4 @@
-use crate::{pubsub::WriteItem, types::Request, Router, RpcSend, TaskSet};
+use crate::{types::Request, Router, RpcSend, TaskSet};
 use ::tracing::info_span;
 use opentelemetry::trace::TraceContextExt;
 use serde_json::value::RawValue;
@@ -10,10 +10,20 @@ use tokio::{
     sync::mpsc::{self, error::SendError},
     task::JoinHandle,
 };
+#[cfg(feature = "pubsub")]
 use tokio_stream::StreamExt;
 use tokio_util::sync::WaitForCancellationFutureOwned;
 use tracing::{enabled, Level};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+/// An item to be written to an outbound JSON pubsub stream. Produced by
+/// [`HandlerCtx`] notification senders and consumed by the pubsub write task.
+#[derive(Debug, Clone)]
+#[cfg_attr(not(feature = "pubsub"), allow(dead_code))]
+pub(crate) struct WriteItem {
+    pub(crate) tracing: Arc<TracingInfo>,
+    pub(crate) json: Box<RawValue>,
+}
 
 /// Errors that can occur when sending notifications.
 #[derive(thiserror::Error, Debug)]
@@ -242,6 +252,7 @@ pub struct HandlerCtx {
 
 impl HandlerCtx {
     /// Create a new handler context.
+    #[cfg_attr(not(any(feature = "axum", feature = "pubsub")), allow(dead_code))]
     pub(crate) const fn new(
         notifications: Option<mpsc::Sender<WriteItem>>,
         tasks: TaskSet,
@@ -368,6 +379,7 @@ impl HandlerCtx {
     /// is not consumed and this returns `Ok(())` immediately.
     ///
     /// [`Stream`]: tokio_stream::Stream
+    #[cfg(feature = "pubsub")]
     pub async fn notify_stream<S, T>(&self, stream: S) -> Result<(), NotifyError>
     where
         S: tokio_stream::Stream<Item = T> + Send,
@@ -516,6 +528,7 @@ impl HandlerCtx {
     /// was cancelled, and `Some` otherwise.
     ///
     /// [`Stream`]: tokio_stream::Stream
+    #[cfg(feature = "pubsub")]
     pub fn spawn_notify_stream<S, T>(
         &self,
         stream: S,

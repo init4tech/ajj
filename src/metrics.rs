@@ -1,4 +1,6 @@
-use metrics::{counter, gauge, histogram, Counter, Gauge, Histogram};
+use metrics::{counter, gauge, Counter, Gauge};
+#[cfg(any(feature = "axum", feature = "pubsub"))]
+use metrics::{histogram, Histogram};
 use std::sync::LazyLock;
 
 /// Metric name for counting router calls.
@@ -256,6 +258,7 @@ fn record_completed_call(service_name: &'static str, method: &str) {
 }
 
 /// Get or register a histogram for message sizes on a specific service and direction.
+#[cfg(any(feature = "axum", feature = "pubsub"))]
 fn message_size(service_name: &'static str, direction: &'static str) -> Histogram {
     let _ = &DESCRIBE;
     histogram!(
@@ -266,6 +269,7 @@ fn message_size(service_name: &'static str, direction: &'static str) -> Histogra
 }
 
 /// Record the uncompressed size in bytes of a message sent or received on a service.
+#[cfg(any(feature = "axum", feature = "pubsub"))]
 pub(crate) fn record_message_size(
     service_name: &'static str,
     direction: &'static str,

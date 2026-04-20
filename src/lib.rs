@@ -90,7 +90,7 @@
 //!
 //! Routers can also be served over axum websockets. When both `axum` and
 //! `pubsub` features are enabled, the `pubsub` module provides
-//! [`pubsub::AxumWsCfg`] and the [`pubsub::ajj_websocket`] axum handler. This
+//! `pubsub::AxumWsCfg` and the `pubsub::ajj_websocket` axum handler. This
 //! handler will serve the router over websockets at a specific route. The
 //! router is a property of the `AxumWsCfg` object, and is passed to the
 //! handler via axum's `State` extractor.

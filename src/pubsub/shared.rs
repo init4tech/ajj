@@ -1,10 +1,10 @@
 use crate::{
     pubsub::{In, JsonSink, Listener, Out},
+    routes::WriteItem,
     types::InboundData,
     HandlerCtx, TaskSet, TracingInfo,
 };
 use core::fmt;
-use serde_json::value::RawValue;
 use std::sync::{
     atomic::{AtomicU32, AtomicU64, Ordering},
     Arc,
@@ -307,13 +307,6 @@ where
 
         tasks.spawn_graceful(future)
     }
-}
-
-/// An item to be written to an outbound JSON pubsub stream.
-#[derive(Debug, Clone)]
-pub(crate) struct WriteItem {
-    pub(crate) tracing: Arc<TracingInfo>,
-    pub(crate) json: Box<RawValue>,
 }
 
 /// The Write Task is responsible for writing JSON to the outbound connection.
