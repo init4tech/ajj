@@ -148,7 +148,6 @@ impl ConnectionManager {
             items: rx,
             connection,
             tx_msg_id: self.tx_msg_id.clone(),
-            service_name: self.router.service_name(),
         };
 
         (rt, wt)
@@ -269,11 +268,11 @@ where
                     );
                     ctx.init_request_span(&router, None);
 
-                    let span = ctx.span().clone();
-                    span.in_scope(|| {
+                    let tracing_for_reply = Arc::clone(&ctx.tracing);
+                    ctx.span().in_scope(|| {
                         message_event!(
                             @received,
-                            service: router.service_name(),
+                            service: tracing_for_reply.service,
                             counter: &rx_msg_id,
                             bytes: item_bytes,
                         );
@@ -289,7 +288,7 @@ where
                             // as the task is done regardless.
                             if let Some(json) = fut.await {
                                 let _ = permit.send(
-                                    WriteItem { span, json }
+                                    WriteItem { tracing: tracing_for_reply, json }
                                 );
                             }
                         }
@@ -313,7 +312,7 @@ where
 /// An item to be written to an outbound JSON pubsub stream.
 #[derive(Debug, Clone)]
 pub(crate) struct WriteItem {
-    pub(crate) span: tracing::Span,
+    pub(crate) tracing: Arc<TracingInfo>,
     pub(crate) json: Box<RawValue>,
 }
 
@@ -336,9 +335,6 @@ struct WriteTask<T: Listener> {
 
     /// Counter for OTEL messages sent.
     pub(crate) tx_msg_id: Arc<AtomicU32>,
-
-    /// Service name, used to tag the `ajj.router.message_size_bytes` histogram.
-    pub(crate) service_name: &'static str,
 }
 
 impl<T: Listener> WriteTask<T> {
@@ -356,7 +352,6 @@ impl<T: Listener> WriteTask<T> {
             mut items,
             mut connection,
             tx_msg_id,
-            service_name,
             ..
         } = self;
 
@@ -369,14 +364,15 @@ impl<T: Listener> WriteTask<T> {
                     break;
                 }
                 item = items.recv() => {
-                    let Some(WriteItem { span, json }) = item else {
-                        tracing::error!("Json stream has closed");
+                    let Some(WriteItem { tracing, json }) = item else {
+                        ::tracing::error!("Json stream has closed");
                         break;
                     };
+                    let span = tracing.request_span().clone();
                     span.in_scope(|| {
                         message_event!(
                             @sent,
-                            service: service_name,
+                            service: tracing.service,
                             counter: &tx_msg_id,
                             bytes: json.get().len(),
                         );

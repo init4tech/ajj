@@ -42,7 +42,7 @@ impl From<SendError<WriteItem>> for NotifyError {
 #[derive(Debug)]
 pub struct NotifyPermit<'a> {
     permit: mpsc::Permit<'a, WriteItem>,
-    span: tracing::Span,
+    tracing: Arc<TracingInfo>,
 }
 
 impl<'a> NotifyPermit<'a> {
@@ -53,7 +53,7 @@ impl<'a> NotifyPermit<'a> {
     pub fn send<T: RpcSend>(self, t: T) -> Result<(), serde_json::Error> {
         let json = t.into_raw_value()?;
         self.permit.send(WriteItem {
-            span: self.span,
+            tracing: self.tracing,
             json,
         });
         Ok(())
@@ -72,7 +72,7 @@ impl<'a> NotifyPermit<'a> {
 #[derive(Debug)]
 pub struct OwnedNotifyPermit {
     permit: mpsc::OwnedPermit<WriteItem>,
-    span: tracing::Span,
+    tracing: Arc<TracingInfo>,
 }
 
 impl OwnedNotifyPermit {
@@ -83,7 +83,7 @@ impl OwnedNotifyPermit {
     pub fn send<T: RpcSend>(self, t: T) -> Result<(), serde_json::Error> {
         let json = t.into_raw_value()?;
         self.permit.send(WriteItem {
-            span: self.span,
+            tracing: self.tracing,
             json,
         });
         Ok(())
@@ -348,7 +348,7 @@ impl HandlerCtx {
             let rv = t.into_raw_value()?;
             notifications
                 .send(WriteItem {
-                    span: self.span().clone(),
+                    tracing: Arc::clone(&self.tracing),
                     json: rv,
                 })
                 .await?;
@@ -391,7 +391,7 @@ impl HandlerCtx {
         let permit = self.notifications.as_ref()?.reserve().await.ok()?;
         Some(NotifyPermit {
             permit,
-            span: self.span().clone(),
+            tracing: Arc::clone(&self.tracing),
         })
     }
 
@@ -409,7 +409,7 @@ impl HandlerCtx {
             .ok()?;
         Some(OwnedNotifyPermit {
             permit,
-            span: self.span().clone(),
+            tracing: Arc::clone(&self.tracing),
         })
     }
 
@@ -421,7 +421,7 @@ impl HandlerCtx {
         let permit = self.notifications.as_ref()?.try_reserve().ok()?;
         Some(NotifyPermit {
             permit,
-            span: self.span().clone(),
+            tracing: Arc::clone(&self.tracing),
         })
     }
 
@@ -438,7 +438,7 @@ impl HandlerCtx {
             .ok()?;
         Some(OwnedNotifyPermit {
             permit,
-            span: self.span().clone(),
+            tracing: Arc::clone(&self.tracing),
         })
     }
 
@@ -449,13 +449,13 @@ impl HandlerCtx {
     /// Returns `None` if notifications are not enabled.
     pub async fn permit_many(&self, n: usize) -> Option<impl Iterator<Item = OwnedNotifyPermit>> {
         let sender = self.notifications.as_ref()?;
-        let span = self.span().clone();
+        let tracing = Arc::clone(&self.tracing);
         let mut permits = Vec::with_capacity(n);
         for _ in 0..n {
             let permit = sender.clone().reserve_owned().await.ok()?;
             permits.push(OwnedNotifyPermit {
                 permit,
-                span: span.clone(),
+                tracing: Arc::clone(&tracing),
             });
         }
         Some(permits.into_iter())
@@ -469,13 +469,13 @@ impl HandlerCtx {
     /// available slots.
     pub fn try_permit_many(&self, n: usize) -> Option<impl Iterator<Item = OwnedNotifyPermit>> {
         let sender = self.notifications.as_ref()?;
-        let span = self.span().clone();
+        let tracing = Arc::clone(&self.tracing);
         let mut permits = Vec::with_capacity(n);
         for _ in 0..n {
             let permit = sender.clone().try_reserve_owned().ok()?;
             permits.push(OwnedNotifyPermit {
                 permit,
-                span: span.clone(),
+                tracing: Arc::clone(&tracing),
             });
         }
         Some(permits.into_iter())
