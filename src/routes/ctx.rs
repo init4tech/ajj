@@ -2,7 +2,10 @@ use crate::{pubsub::WriteItem, types::Request, Router, RpcSend, TaskSet};
 use ::tracing::info_span;
 use opentelemetry::trace::TraceContextExt;
 use serde_json::value::RawValue;
-use std::{future::Future, sync::OnceLock};
+use std::{
+    future::Future,
+    sync::{Arc, OnceLock},
+};
 use tokio::{
     sync::mpsc::{self, error::SendError},
     task::JoinHandle,
@@ -232,8 +235,9 @@ pub struct HandlerCtx {
     /// A task set on which to spawn tasks. This is used to coordinate
     pub(crate) tasks: TaskSet,
 
-    /// Tracing information for OpenTelemetry.
-    pub(crate) tracing: TracingInfo,
+    /// Tracing information for OpenTelemetry, shared with any `WriteItem`s
+    /// produced by this context.
+    pub(crate) tracing: Arc<TracingInfo>,
 }
 
 impl HandlerCtx {
@@ -241,7 +245,7 @@ impl HandlerCtx {
     pub(crate) const fn new(
         notifications: Option<mpsc::Sender<WriteItem>>,
         tasks: TaskSet,
-        tracing: TracingInfo,
+        tracing: Arc<TracingInfo>,
     ) -> Self {
         Self {
             notifications,
@@ -256,7 +260,7 @@ impl HandlerCtx {
         Self {
             notifications: None,
             tasks: TaskSet::default(),
-            tracing: TracingInfo::mock(),
+            tracing: Arc::new(TracingInfo::mock()),
         }
     }
 
@@ -272,19 +276,20 @@ impl HandlerCtx {
         Self {
             notifications: self.notifications.clone(),
             tasks: self.tasks.clone(),
-            tracing: self
-                .tracing
-                .child(router, self.notifications_enabled(), parent),
+            tracing: Arc::new(
+                self.tracing
+                    .child(router, self.notifications_enabled(), parent),
+            ),
         }
     }
 
     /// Get a reference to the tracing information for this handler context.
-    pub const fn tracing_info(&self) -> &TracingInfo {
+    pub fn tracing_info(&self) -> &TracingInfo {
         &self.tracing
     }
 
     /// Get the OpenTelemetry service name for this handler context.
-    pub const fn service_name(&self) -> &'static str {
+    pub fn service_name(&self) -> &'static str {
         self.tracing.service
     }
 
@@ -296,7 +301,7 @@ impl HandlerCtx {
 
     /// Set the tracing information for this handler context.
     pub fn set_tracing_info(&mut self, tracing: TracingInfo) {
-        self.tracing = tracing;
+        self.tracing = Arc::new(tracing);
     }
 
     /// Check if notifications can be sent to the client. This will be false
@@ -693,7 +698,7 @@ impl HandlerArgs {
     }
 
     /// Get the service name for this handler invocation.
-    pub const fn service_name(&self) -> &'static str {
+    pub fn service_name(&self) -> &'static str {
         self.ctx.service_name()
     }
 }

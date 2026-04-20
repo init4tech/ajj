@@ -259,7 +259,7 @@ where
                      // possible, and then given to the Handler ctx. It
                      // will be populated with request-specific details
                      // (e.g. method) during ctx instantiation.
-                    let tracing = TracingInfo::new(router.service_name());
+                    let tracing = Arc::new(TracingInfo::new(router.service_name()));
 
                     let ctx =
                     HandlerCtx::new(
