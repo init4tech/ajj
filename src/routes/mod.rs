@@ -1,4 +1,6 @@
 mod ctx;
+#[cfg(feature = "pubsub")]
+pub(crate) use ctx::WriteItem;
 pub use ctx::{HandlerArgs, HandlerCtx, NotifyError, NotifyPermit, OwnedNotifyPermit, TracingInfo};
 
 mod erased;

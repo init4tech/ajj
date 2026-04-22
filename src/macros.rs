@@ -61,6 +61,7 @@ macro_rules! unwrap_infallible {
 /// should rely on the histogram metric for size visibility.
 ///
 /// See <https://github.com/open-telemetry/semantic-conventions/blob/d66109ff41e75f49587114e5bff9d101b87f40bd/docs/rpc/rpc-spans.md#events>
+#[cfg(any(feature = "axum", feature = "pubsub"))]
 macro_rules! message_event {
     ($type:literal, service: $service:expr, counter: $counter:expr, bytes: $bytes:expr,) => {{
         let bytes = $bytes;

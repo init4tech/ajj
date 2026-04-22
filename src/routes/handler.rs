@@ -213,7 +213,7 @@ pub struct PhantomParams<T>(PhantomData<T>);
 /// However this still leaves the problem of "bar". There is no way to express
 /// "bar" unambiguously by reordering method invocations. In this case, you can
 /// use the [`Params`] and [`State`] wrapper structs to disambiguate the
-/// argument type. This should seem familiar to users of [`axum`].
+/// argument type. This should seem familiar to users of `axum`.
 ///
 /// ```
 /// # use ajj::{Router, Params, State};

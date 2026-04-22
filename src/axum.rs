@@ -70,7 +70,10 @@ where
         HandlerCtx::new(
             None,
             self.task_set.clone(),
-            TracingInfo::new_with_context(self.router.service_name(), parent_context),
+            Arc::new(TracingInfo::new_with_context(
+                self.router.service_name(),
+                parent_context,
+            )),
         )
     }
 }

@@ -1,16 +1,29 @@
-use crate::{pubsub::WriteItem, types::Request, Router, RpcSend, TaskSet};
+use crate::{types::Request, Router, RpcSend, TaskSet};
 use ::tracing::info_span;
 use opentelemetry::trace::TraceContextExt;
 use serde_json::value::RawValue;
-use std::{future::Future, sync::OnceLock};
+use std::{
+    future::Future,
+    sync::{Arc, OnceLock},
+};
 use tokio::{
     sync::mpsc::{self, error::SendError},
     task::JoinHandle,
 };
+#[cfg(feature = "pubsub")]
 use tokio_stream::StreamExt;
 use tokio_util::sync::WaitForCancellationFutureOwned;
 use tracing::{enabled, Level};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+/// An item to be written to an outbound JSON pubsub stream. Produced by
+/// [`HandlerCtx`] notification senders and consumed by the pubsub write task.
+#[derive(Debug, Clone)]
+#[cfg_attr(not(feature = "pubsub"), allow(dead_code))]
+pub(crate) struct WriteItem {
+    pub(crate) tracing: Arc<TracingInfo>,
+    pub(crate) json: Box<RawValue>,
+}
 
 /// Errors that can occur when sending notifications.
 #[derive(thiserror::Error, Debug)]
@@ -39,7 +52,7 @@ impl From<SendError<WriteItem>> for NotifyError {
 #[derive(Debug)]
 pub struct NotifyPermit<'a> {
     permit: mpsc::Permit<'a, WriteItem>,
-    span: tracing::Span,
+    tracing: Arc<TracingInfo>,
 }
 
 impl<'a> NotifyPermit<'a> {
@@ -50,7 +63,7 @@ impl<'a> NotifyPermit<'a> {
     pub fn send<T: RpcSend>(self, t: T) -> Result<(), serde_json::Error> {
         let json = t.into_raw_value()?;
         self.permit.send(WriteItem {
-            span: self.span,
+            tracing: self.tracing,
             json,
         });
         Ok(())
@@ -69,7 +82,7 @@ impl<'a> NotifyPermit<'a> {
 #[derive(Debug)]
 pub struct OwnedNotifyPermit {
     permit: mpsc::OwnedPermit<WriteItem>,
-    span: tracing::Span,
+    tracing: Arc<TracingInfo>,
 }
 
 impl OwnedNotifyPermit {
@@ -80,7 +93,7 @@ impl OwnedNotifyPermit {
     pub fn send<T: RpcSend>(self, t: T) -> Result<(), serde_json::Error> {
         let json = t.into_raw_value()?;
         self.permit.send(WriteItem {
-            span: self.span,
+            tracing: self.tracing,
             json,
         });
         Ok(())
@@ -201,7 +214,7 @@ impl TracingInfo {
     /// Panics if the span has not been initialized via
     /// [`Self::init_request_span`].
     #[track_caller]
-    fn request_span(&self) -> &tracing::Span {
+    pub(crate) fn request_span(&self) -> &tracing::Span {
         self.span.get().expect("span not initialized")
     }
 
@@ -232,16 +245,18 @@ pub struct HandlerCtx {
     /// A task set on which to spawn tasks. This is used to coordinate
     pub(crate) tasks: TaskSet,
 
-    /// Tracing information for OpenTelemetry.
-    pub(crate) tracing: TracingInfo,
+    /// Tracing information for OpenTelemetry, shared with any `WriteItem`s
+    /// produced by this context.
+    pub(crate) tracing: Arc<TracingInfo>,
 }
 
 impl HandlerCtx {
     /// Create a new handler context.
+    #[cfg_attr(not(any(feature = "axum", feature = "pubsub")), allow(dead_code))]
     pub(crate) const fn new(
         notifications: Option<mpsc::Sender<WriteItem>>,
         tasks: TaskSet,
-        tracing: TracingInfo,
+        tracing: Arc<TracingInfo>,
     ) -> Self {
         Self {
             notifications,
@@ -256,7 +271,7 @@ impl HandlerCtx {
         Self {
             notifications: None,
             tasks: TaskSet::default(),
-            tracing: TracingInfo::mock(),
+            tracing: Arc::new(TracingInfo::mock()),
         }
     }
 
@@ -272,19 +287,20 @@ impl HandlerCtx {
         Self {
             notifications: self.notifications.clone(),
             tasks: self.tasks.clone(),
-            tracing: self
-                .tracing
-                .child(router, self.notifications_enabled(), parent),
+            tracing: Arc::new(
+                self.tracing
+                    .child(router, self.notifications_enabled(), parent),
+            ),
         }
     }
 
     /// Get a reference to the tracing information for this handler context.
-    pub const fn tracing_info(&self) -> &TracingInfo {
+    pub fn tracing_info(&self) -> &TracingInfo {
         &self.tracing
     }
 
     /// Get the OpenTelemetry service name for this handler context.
-    pub const fn service_name(&self) -> &'static str {
+    pub fn service_name(&self) -> &'static str {
         self.tracing.service
     }
 
@@ -296,7 +312,7 @@ impl HandlerCtx {
 
     /// Set the tracing information for this handler context.
     pub fn set_tracing_info(&mut self, tracing: TracingInfo) {
-        self.tracing = tracing;
+        self.tracing = Arc::new(tracing);
     }
 
     /// Check if notifications can be sent to the client. This will be false
@@ -343,7 +359,7 @@ impl HandlerCtx {
             let rv = t.into_raw_value()?;
             notifications
                 .send(WriteItem {
-                    span: self.span().clone(),
+                    tracing: Arc::clone(&self.tracing),
                     json: rv,
                 })
                 .await?;
@@ -363,6 +379,7 @@ impl HandlerCtx {
     /// is not consumed and this returns `Ok(())` immediately.
     ///
     /// [`Stream`]: tokio_stream::Stream
+    #[cfg(feature = "pubsub")]
     pub async fn notify_stream<S, T>(&self, stream: S) -> Result<(), NotifyError>
     where
         S: tokio_stream::Stream<Item = T> + Send,
@@ -386,7 +403,7 @@ impl HandlerCtx {
         let permit = self.notifications.as_ref()?.reserve().await.ok()?;
         Some(NotifyPermit {
             permit,
-            span: self.span().clone(),
+            tracing: Arc::clone(&self.tracing),
         })
     }
 
@@ -404,7 +421,7 @@ impl HandlerCtx {
             .ok()?;
         Some(OwnedNotifyPermit {
             permit,
-            span: self.span().clone(),
+            tracing: Arc::clone(&self.tracing),
         })
     }
 
@@ -416,7 +433,7 @@ impl HandlerCtx {
         let permit = self.notifications.as_ref()?.try_reserve().ok()?;
         Some(NotifyPermit {
             permit,
-            span: self.span().clone(),
+            tracing: Arc::clone(&self.tracing),
         })
     }
 
@@ -433,7 +450,7 @@ impl HandlerCtx {
             .ok()?;
         Some(OwnedNotifyPermit {
             permit,
-            span: self.span().clone(),
+            tracing: Arc::clone(&self.tracing),
         })
     }
 
@@ -444,13 +461,13 @@ impl HandlerCtx {
     /// Returns `None` if notifications are not enabled.
     pub async fn permit_many(&self, n: usize) -> Option<impl Iterator<Item = OwnedNotifyPermit>> {
         let sender = self.notifications.as_ref()?;
-        let span = self.span().clone();
+        let tracing = Arc::clone(&self.tracing);
         let mut permits = Vec::with_capacity(n);
         for _ in 0..n {
             let permit = sender.clone().reserve_owned().await.ok()?;
             permits.push(OwnedNotifyPermit {
                 permit,
-                span: span.clone(),
+                tracing: Arc::clone(&tracing),
             });
         }
         Some(permits.into_iter())
@@ -464,13 +481,13 @@ impl HandlerCtx {
     /// available slots.
     pub fn try_permit_many(&self, n: usize) -> Option<impl Iterator<Item = OwnedNotifyPermit>> {
         let sender = self.notifications.as_ref()?;
-        let span = self.span().clone();
+        let tracing = Arc::clone(&self.tracing);
         let mut permits = Vec::with_capacity(n);
         for _ in 0..n {
             let permit = sender.clone().try_reserve_owned().ok()?;
             permits.push(OwnedNotifyPermit {
                 permit,
-                span: span.clone(),
+                tracing: Arc::clone(&tracing),
             });
         }
         Some(permits.into_iter())
@@ -511,6 +528,7 @@ impl HandlerCtx {
     /// was cancelled, and `Some` otherwise.
     ///
     /// [`Stream`]: tokio_stream::Stream
+    #[cfg(feature = "pubsub")]
     pub fn spawn_notify_stream<S, T>(
         &self,
         stream: S,
@@ -693,7 +711,7 @@ impl HandlerArgs {
     }
 
     /// Get the service name for this handler invocation.
-    pub const fn service_name(&self) -> &'static str {
+    pub fn service_name(&self) -> &'static str {
         self.ctx.service_name()
     }
 }
